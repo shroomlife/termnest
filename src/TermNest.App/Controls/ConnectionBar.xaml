@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="TermNest.App.Controls.ConnectionBar"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid Padding="12,8" ColumnSpacing="8"
+          Background="{ThemeResource LayerOnAcrylicFillColorDefaultBrush}"
+          BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+          BorderThickness="0,0,0,1">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="120" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="180" />
+            <ColumnDefinition Width="120" />
+            <ColumnDefinition Width="100" />
+            <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+
+        <ComboBox x:Name="ProtocolBox"
+                  Grid.Column="0"
+                  PlaceholderText="Protocol"
+                  SelectedIndex="0"
+                  HorizontalAlignment="Stretch">
+            <ComboBoxItem Content="SSH" Tag="SSH" />
+            <ComboBoxItem Content="Telnet" Tag="Telnet" />
+            <ComboBoxItem Content="Rlogin" Tag="Rlogin" />
+            <ComboBoxItem Content="Raw" Tag="Raw" />
+            <ComboBoxItem Content="Serial" Tag="Serial" />
+        </ComboBox>
+
+        <TextBox x:Name="HostBox"
+                 Grid.Column="1"
+                 PlaceholderText="host or IP" />
+
+        <TextBox x:Name="UserBox"
+                 Grid.Column="2"
+                 PlaceholderText="user" />
+
+        <PasswordBox x:Name="PasswordBox"
+                     Grid.Column="3"
+                     PlaceholderText="password" />
+
+        <NumberBox x:Name="PortBox"
+                   Grid.Column="4"
+                   Value="22"
+                   Minimum="1" Maximum="65535"
+                   SpinButtonPlacementMode="Hidden" />
+
+        <Button Grid.Column="5"
+                Click="OnConnectClick"
+                Style="{ThemeResource AccentButtonStyle}">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <FontIcon Glyph="&#xE703;" FontSize="14" />
+                <TextBlock Text="Connect" />
+            </StackPanel>
+        </Button>
+    </Grid>
+</UserControl>

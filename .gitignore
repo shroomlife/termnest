@@ -1,0 +1,55 @@
+# Build outputs
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Pp]ackages/
+
+# IDE state
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.userprefs
+*.sln.iml
+*.lock.json
+
+# Tooling caches
+*.cache
+*.tmp
+*.log
+
+# Test results / coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Publish
+publish/
+publish-out/
+publish-zip/
+dist/
+PublishProfiles/*.user
+*.pubxml.user
+
+# Abandoned WiX experiment — see claude-manager pattern in csproj instead
+installer/
+
+# MSIX packaging artefacts
+*.appx
+*.appxbundle
+*.msix
+*.msixbundle
+AppPackages/
+BundleArtifacts/
+
+# OS junk
+Thumbs.db
+.DS_Store
+
+# Secrets — never commit signing material
+*.pfx
+*.snk
+secrets/
+.cert-thumbprint

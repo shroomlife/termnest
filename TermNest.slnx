@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/TermNest.App/TermNest.App.csproj" />
+    <Project Path="src/TermNest.Core/TermNest.Core.csproj" />
+  </Folder>
+</Solution>

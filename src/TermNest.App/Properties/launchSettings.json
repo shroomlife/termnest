@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "TermNest.App (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "TermNest.App (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}

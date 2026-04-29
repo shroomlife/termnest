@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; style-src 'self' 'unsafe-inline' file:; script-src 'self' 'unsafe-inline' file:;" />
+    <title>terminal</title>
+    <link rel="stylesheet" href="vendor/xterm/xterm.css" />
+    <style>
+        :root {
+            color-scheme: dark;
+            --terminal-bg: #0c0c0c;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background: var(--terminal-bg);
+        }
+
+        body {
+            font-family: "Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+            text-rendering: geometricPrecision;
+            -webkit-font-smoothing: antialiased;
+            font-synthesis: none;
+        }
+
+        #terminal {
+            position: absolute;
+            inset: 0;
+            box-sizing: border-box;
+            padding: 8px 10px;
+            overflow: hidden;
+            background: var(--terminal-bg);
+        }
+
+        .xterm {
+            width: 100%;
+            height: 100%;
+        }
+
+        .xterm .xterm-viewport,
+        .xterm .xterm-screen {
+            background: var(--terminal-bg) !important;
+        }
+
+        .xterm .xterm-viewport {
+            scrollbar-color: #5f6368 #171717;
+            scrollbar-width: thin;
+        }
+
+        .xterm .xterm-viewport::-webkit-scrollbar {
+            width: 12px;
+        }
+
+        .xterm .xterm-viewport::-webkit-scrollbar-track {
+            background: #171717;
+        }
+
+        .xterm .xterm-viewport::-webkit-scrollbar-thumb {
+            background: #5f6368;
+            border: 3px solid #171717;
+            border-radius: 999px;
+        }
+    </style>
+</head>
+<body>
+    <div id="terminal" aria-label="Terminal"></div>
+
+    <script src="vendor/xterm/xterm.js"></script>
+    <script src="vendor/xterm/addonFit.js"></script>
+    <script>
+        const terminalHost = document.getElementById("terminal");
+        const defaultFontSize = 15;
+
+        const theme = {
+            background: "#0c0c0c",
+            foreground: "#d4d4d4",
+            cursor: "#e5e7eb",
+            cursorAccent: "#0c0c0c",
+            selectionBackground: "#264f78",
+            black: "#000000",
+            red: "#cd3131",
+            green: "#0dbc79",
+            yellow: "#e5e510",
+            blue: "#2472c8",
+            magenta: "#bc3fbc",
+            cyan: "#11a8cd",
+            white: "#e5e5e5",
+            brightBlack: "#666666",
+            brightRed: "#f14c4c",
+            brightGreen: "#23d18b",
+            brightYellow: "#f5f543",
+            brightBlue: "#3b8eea",
+            brightMagenta: "#d670d6",
+            brightCyan: "#29b8db",
+            brightWhite: "#ffffff",
+        };
+
+        const term = new Terminal({
+            allowProposedApi: false,
+            convertEol: false,
+            cursorBlink: true,
+            cursorStyle: "block",
+            drawBoldTextInBrightColors: false,
+            fontFamily: "\"Cascadia Mono\", \"Cascadia Code\", Consolas, \"Courier New\", monospace",
+            fontSize: defaultFontSize,
+            fontWeight: 400,
+            fontWeightBold: 600,
+            letterSpacing: 0,
+            lineHeight: 1.18,
+            logLevel: "off",
+            minimumContrastRatio: 1,
+            scrollback: 5000,
+            scrollOnUserInput: true,
+            smoothScrollDuration: 0,
+            tabStopWidth: 8,
+            theme,
+            windowsPty: { backend: "conpty" },
+        });
+
+        const fitAddon = new FitAddon.FitAddon();
+        let lastCols = 0;
+        let lastRows = 0;
+        let resizeQueued = false;
+        let sawBackendOutput = false;
+        let postedPainted = false;
+
+        function post(message) {
+            window.chrome?.webview?.postMessage(message);
+        }
+
+        function postResize(cols, rows) {
+            if (!Number.isFinite(cols) || !Number.isFinite(rows)) {
+                return;
+            }
+            if (cols < 20 || rows < 5) {
+                return;
+            }
+            if (cols === lastCols && rows === lastRows) {
+                return;
+            }
+
+            lastCols = cols;
+            lastRows = rows;
+            post({ type: "resize", cols, rows });
+        }
+
+        function refit() {
+            try {
+                fitAddon.fit();
+                postResize(term.cols, term.rows);
+            } catch (error) {
+                post({ type: "log", message: `fit failed: ${error.message}` });
+            }
+        }
+
+        function queueFit() {
+            if (resizeQueued) {
+                return;
+            }
+
+            resizeQueued = true;
+            requestAnimationFrame(() => {
+                resizeQueued = false;
+                refit();
+            });
+        }
+
+        term.loadAddon(fitAddon);
+        term.open(terminalHost);
+
+        term.onData(data => {
+            post({ type: "data", data });
+        });
+
+        term.onResize(size => {
+            postResize(size.cols, size.rows);
+        });
+
+        term.onTitleChange(title => {
+            post({ type: "title", title });
+        });
+
+        term.onWriteParsed(() => {
+            if (sawBackendOutput && !postedPainted) {
+                postedPainted = true;
+                post({ type: "painted" });
+            }
+        });
+
+        terminalHost.addEventListener("pointerdown", () => term.focus());
+
+        new ResizeObserver(queueFit).observe(terminalHost);
+
+        window.host_write = text => {
+            const data = String(text ?? "");
+            if (data.length === 0) {
+                return;
+            }
+
+            sawBackendOutput = true;
+            term.write(data);
+        };
+
+        window.host_clear = () => {
+            term.clear();
+        };
+
+        window.host_focus = () => {
+            term.focus();
+        };
+
+        window.host_setFontSize = value => {
+            const parsed = Number(value);
+            const fontSize = Number.isFinite(parsed)
+                ? Math.min(Math.max(Math.round(parsed), 10), 28)
+                : defaultFontSize;
+
+            if (Math.abs(term.options.fontSize - fontSize) < 0.1) {
+                return;
+            }
+
+            term.options.fontSize = fontSize;
+            queueFit();
+        };
+
+        window.host_setTheme = json => {
+            try {
+                const nextTheme = JSON.parse(json);
+                term.options.theme = { ...term.options.theme, ...nextTheme };
+                if (nextTheme.background) {
+                    document.documentElement.style.setProperty("--terminal-bg", nextTheme.background);
+                }
+            } catch (error) {
+                post({ type: "log", message: `theme failed: ${error.message}` });
+            }
+        };
+
+        requestAnimationFrame(() => {
+            refit();
+            post({ type: "ready" });
+            term.focus();
+        });
+    </script>
+</body>
+</html>

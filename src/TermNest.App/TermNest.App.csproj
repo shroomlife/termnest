@@ -1,0 +1,80 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.17763.0</TargetPlatformMinVersion>
+    <RootNamespace>TermNest.App</RootNamespace>
+    <AssemblyName>TermNest</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x86;x64;ARM64</Platforms>
+    <RuntimeIdentifiers>win-x86;win-x64;win-arm64</RuntimeIdentifiers>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' and '$(Platform)' == 'AnyCPU'">win-x64</RuntimeIdentifier>
+    <UseWinUI>true</UseWinUI>
+    <WinUISDKReferences>false</WinUISDKReferences>
+    <EnableMsixTooling>true</EnableMsixTooling>
+
+    <!-- MSIX packaging — pattern adopted from claude-manager.
+         SideloadOnly default: drop a self-signed .msix into dist/ on every
+         Release build. To submit to the Store, override
+         -p:UapAppxPackageBuildMode=StoreUpload. -->
+    <UapAppxPackageBuildMode>SideloadOnly</UapAppxPackageBuildMode>
+    <AppxPackageSigningEnabled Condition="'$(UapAppxPackageBuildMode)' != 'StoreUpload'">true</AppxPackageSigningEnabled>
+    <AppxPackageSigningEnabled Condition="'$(UapAppxPackageBuildMode)' == 'StoreUpload'">false</AppxPackageSigningEnabled>
+    <!-- Sign with a cert from CurrentUser\My by thumbprint. The build script
+         scripts/build-msix.ps1 generates a self-signed cert on first run and
+         passes its thumbprint via -p:PackageCertificateThumbprint=...
+         For a Store submission, override -p:UapAppxPackageBuildMode=StoreUpload. -->
+    <GenerateAppxPackageOnBuild Condition="'$(Configuration)'=='Release'">true</GenerateAppxPackageOnBuild>
+    <AppxPackageDir>$(MSBuildThisFileDirectory)..\..\dist\</AppxPackageDir>
+    <AppxBundle>Never</AppxBundle>
+
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PublishReadyToRun>False</PublishReadyToRun>
+    <PublishTrimmed>False</PublishTrimmed>
+
+    <!-- Bake the icon into the EXE resource. MainWindow also calls
+         AppWindow.SetIcon at runtime because WinAppSDK packaged/unpackaged
+         runs do not always pick up the resource consistently. -->
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="Assets\*.png" />
+    <Content Include="Assets\AppIcon.ico" />
+    <Content Include="Assets\Terminal\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Manifest Include="$(ApplicationManifest)" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(DisableMsixProjectCapabilityAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
+    <ProjectCapability Include="Msix" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="H.NotifyIcon.WinUI" Version="2.4.1" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3912.50" />
+    <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.1721" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260416003" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TermNest.Core\TermNest.Core.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(DisableHasPackageAndPublishMenuAddedByProject)'!='true' and '$(EnableMsixTooling)'=='true'">
+    <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
+  </PropertyGroup>
+
+  <!-- Copy the produced .msix to dist/ root after Release build so the
+       output isn't buried under nested architecture/version folders. -->
+  <Target Name="CopyMsixToDistRoot" AfterTargets="Build" Condition="'$(Configuration)'=='Release' AND '$(GenerateAppxPackageOnBuild)'=='true'">
+    <ItemGroup>
+      <MsixFiles Include="$(AppxPackageDir)**\TermNest.App_*.msix" />
+    </ItemGroup>
+    <Copy SourceFiles="@(MsixFiles)" DestinationFolder="$(AppxPackageDir)" />
+  </Target>
+</Project>

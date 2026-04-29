@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="TermNest.App.Shell.ShellLayout"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:controls="using:TermNest.App.Controls"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid x:Name="RootGrid">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition x:Name="BottomSplitterRow" Height="Auto" />
+            <RowDefinition x:Name="BottomStripRow" Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition x:Name="SideRailColumn" Width="320" MinWidth="200" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <controls:ConnectionBar x:Name="ConnectBar"
+                                Grid.Row="0"
+                                Grid.ColumnSpan="3"
+                                ConnectRequested="OnConnectRequested" />
+
+        <Border Grid.Row="1" Grid.Column="0"
+                Background="{ThemeResource LayerOnAcrylicFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                BorderThickness="0,0,1,0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+                <controls:SessionsPanel x:Name="SessionsPanelControl"
+                                        Grid.Row="0"
+                                        SessionInvoked="OnSessionInvoked" />
+                <Border Grid.Row="1" Padding="12,8" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
+                    <StackPanel Spacing="8">
+                        <TextBlock Text="putty.exe path" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <Grid ColumnSpacing="6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="PuttyPathBox"
+                                     Text="{x:Bind ViewModel.PuttyExePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     TextChanged="OnPuttyPathChanged" />
+                            <Button Grid.Column="1"
+                                    Width="44"
+                                    MinWidth="44"
+                                    Padding="0"
+                                    VerticalAlignment="Stretch"
+                                    Click="OnBrowsePuttyPathClick"
+                                    ToolTipService.ToolTip="Browse for putty.exe"
+                                    Content="..." />
+                        </Grid>
+                        <TextBlock Text="winscp.exe path" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <Grid ColumnSpacing="6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBox x:Name="WinScpPathBox"
+                                     Text="{x:Bind ViewModel.WinScpExePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     TextChanged="OnWinScpPathChanged" />
+                            <Button Grid.Column="1"
+                                    Width="44"
+                                    MinWidth="44"
+                                    Padding="0"
+                                    VerticalAlignment="Stretch"
+                                    Click="OnBrowseWinScpPathClick"
+                                    ToolTipService.ToolTip="Browse for winscp.exe"
+                                    Content="..." />
+                        </Grid>
+                        <TextBlock Text="terminal font size" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <NumberBox x:Name="TerminalFontSizeBox"
+                                   Value="{x:Bind ViewModel.TerminalFontSize, Mode=TwoWay}"
+                                   Minimum="10"
+                                   Maximum="28"
+                                   SmallChange="1"
+                                   LargeChange="2"
+                                   SpinButtonPlacementMode="Inline"
+                                   ValueChanged="OnTerminalFontSizeChanged" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- Drag handle for the side rail. Pointer-based manipulation lives in
+             the code-behind because CommunityToolkit's GridSplitter has not
+             been pinned to a WinAppSDK 1.8 / net10 build yet. The handle is
+             6px wide; the inner 1px rectangle paints the divider line, the
+             surrounding transparent surface enlarges the hit-test target. -->
+        <controls:SplitterHandle x:Name="SideRailSplitter"
+                                 Grid.Row="1" Grid.Column="1"
+                                 Width="6"
+                                 Background="Transparent"
+                                 ManipulationMode="TranslateX"
+                                 PointerPressed="OnSideRailSplitterPointerPressed"
+                                 PointerMoved="OnSideRailSplitterPointerMoved"
+                                 PointerReleased="OnSideRailSplitterPointerReleased"
+                                 PointerCaptureLost="OnSideRailSplitterPointerReleased">
+            <Rectangle Width="1"
+                       HorizontalAlignment="Left"
+                       Fill="{ThemeResource DividerStrokeColorDefaultBrush}" />
+        </controls:SplitterHandle>
+
+        <controls:SessionTabsControl x:Name="SessionTabs"
+                                     Grid.Row="1"
+                                     Grid.Column="2"
+                                     StatusMessage="OnTabsStatusMessage" />
+
+        <Border x:Name="BottomStrip"
+                Grid.Row="3"
+                Grid.Column="0"
+                Grid.ColumnSpan="3"
+                Background="{ThemeResource LayerOnAcrylicFillColorDefaultBrush}"
+                BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
+                BorderThickness="0,1,0,0"
+                Padding="12,8"
+                Visibility="Visible">
+            <Grid ColumnSpacing="12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0"
+                           Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1"
+                           Text="{x:Bind ViewModel.LayoutDisplayName, Mode=OneWay}"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                           VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

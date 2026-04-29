@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="TermNest.App.Controls.SessionTabsControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <Grid>
+        <TabView x:Name="Tabs"
+                 HorizontalAlignment="Stretch"
+                 VerticalAlignment="Stretch"
+                 IsAddTabButtonVisible="False"
+                 TabWidthMode="SizeToContent"
+                 TabCloseRequested="OnTabCloseRequested"
+                 SelectionChanged="OnSelectionChanged"
+                 CanReorderTabs="True"
+                 CanDragTabs="False"
+                 CanTearOutTabs="False">
+            <TabView.TabStripHeader>
+                <TextBlock Margin="12,0,12,0"
+                           VerticalAlignment="Center"
+                           Style="{StaticResource CaptionTextBlockStyle}"
+                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                           Text="Sessions" />
+            </TabView.TabStripHeader>
+        </TabView>
+
+        <StackPanel x:Name="EmptyHint"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Spacing="8"
+                    IsHitTestVisible="False">
+            <FontIcon Glyph="&#xEC7A;" FontSize="32" Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+            <TextBlock Text="No active session"
+                       Style="{StaticResource SubtitleTextBlockStyle}"
+                       HorizontalAlignment="Center"
+                       Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+            <TextBlock Text="Pick a session from the left rail or use Quick Connect."
+                       Style="{StaticResource BodyTextBlockStyle}"
+                       HorizontalAlignment="Center"
+                       Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
+        </StackPanel>
+    </Grid>
+</UserControl>

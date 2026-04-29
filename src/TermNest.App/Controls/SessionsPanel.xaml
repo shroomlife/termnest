@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<UserControl
+    x:Class="TermNest.App.Controls.SessionsPanel"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:local="using:TermNest.App.Controls"
+    xmlns:sessions="using:TermNest.Core.Sessions"
+    mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <Style x:Key="SessionInlineActionButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinWidth" Value="28" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </UserControl.Resources>
+
+    <Grid RowSpacing="8" Padding="12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnSpacing="8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Text="Sessions" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Click="OnNewSessionClick" ToolTipService.ToolTip="New session">
+                <FontIcon Glyph="&#xE710;" FontSize="14" />
+            </Button>
+        </Grid>
+
+        <!-- Search -->
+        <AutoSuggestBox x:Name="SearchBox"
+                        Grid.Row="1"
+                        PlaceholderText="Search sessions"
+                        QueryIcon="Find"
+                        TextChanged="OnSearchTextChanged" />
+
+        <!-- Tree. A single click opens leaf sessions, while ItemInvoked keeps
+             keyboard activation (Enter) working. Folder clicks only expand /
+             select and never open a session. -->
+        <TreeView x:Name="SessionTree"
+                  Grid.Row="2"
+                  Background="Transparent"
+                  CanReorderItems="False"
+                  CanDragItems="False"
+                  SelectionMode="Single"
+                  Expanding="OnTreeExpanding"
+                  Collapsed="OnTreeCollapsed"
+                  ItemInvoked="OnTreeItemInvoked">
+            <TreeView.ItemTemplate>
+                <DataTemplate x:DataType="sessions:SessionTreeNode">
+                    <!-- Pointer events sit on the TreeViewItem itself so the
+                         hit-test region matches the row's visible hover
+                         background (full TreeView width, including the
+                         indent / padding around the inner grid). Hooking
+                         them on the inner grid was unreliable because the
+                         Auto-sized action column collapses to zero width
+                         until the buttons render, leaving a dead band on
+                         the right side of every row. -->
+                    <TreeViewItem ItemsSource="{x:Bind Children}"
+                                  IsExpanded="{x:Bind IsExpanded, Mode=TwoWay}"
+                                  RightTapped="OnTreeItemRightTapped"
+                                  Tapped="OnTreeItemTapped"
+                                  PointerEntered="OnSessionTreeRowPointerEntered"
+                                  PointerExited="OnSessionTreeRowPointerExited">
+                        <Grid MinHeight="32"
+                              ColumnSpacing="6"
+                              Background="Transparent">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0"
+                                        Orientation="Horizontal"
+                                        Spacing="8"
+                                        VerticalAlignment="Center">
+                                <FontIcon Glyph="{x:Bind local:SessionsPanel.GlyphFor(IsFolder)}"
+                                          FontSize="14"
+                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="{x:Bind Name}"
+                                           VerticalAlignment="Center"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+
+                            <!-- Buttons stay hit-test-visible at all times so
+                                 the column's Auto width is stable; only the
+                                 Opacity is toggled by hover. HorizontalAlignment
+                                 + matching left/right margins keep the spacing
+                                 around the last icon symmetrical with the gap
+                                 between icons. -->
+                            <StackPanel x:Name="SessionActionButtons"
+                                        Grid.Column="1"
+                                        Orientation="Horizontal"
+                                        Spacing="3"
+                                        HorizontalAlignment="Right"
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,3,0"
+                                        Opacity="0"
+                                        Visibility="{x:Bind local:SessionsPanel.ActionVisibilityFor(IsFolder)}">
+                                <Button Style="{StaticResource SessionInlineActionButtonStyle}"
+                                        Click="OnConnectSessionClick"
+                                        ToolTipService.ToolTip="Connect via SSH"
+                                        AutomationProperties.Name="Connect via SSH">
+                                    <Viewbox Width="15" Height="15">
+                                        <!-- Iconify: mdi:console-line -->
+                                        <Path Data="M13,19V16H21V19H13M8.5,13L2.47,7H6.71L11.67,11.95C12.25,12.54 12.25,13.5 11.67,14.07L6.74,19H2.5L8.5,13Z"
+                                              Fill="{ThemeResource TextFillColorPrimaryBrush}" />
+                                    </Viewbox>
+                                </Button>
+                                <Button Style="{StaticResource SessionInlineActionButtonStyle}"
+                                        Click="OnOpenWinScpSessionClick"
+                                        ToolTipService.ToolTip="Open in WinSCP"
+                                        AutomationProperties.Name="Open in WinSCP">
+                                    <Viewbox Width="15" Height="15">
+                                        <!-- Iconify: mdi:folder-network-outline -->
+                                        <Path Data="M15 20C15 19.45 14.55 19 14 19H13V17H19C20.11 17 21 16.11 21 15V7C21 5.9 20.11 5 19 5H13L11 3H5C3.9 3 3 3.9 3 5V15C3 16.11 3.9 17 5 17H11V19H10C9.45 19 9 19.45 9 20H2V22H9C9 22.55 9.45 23 10 23H14C14.55 23 15 22.55 15 22H22V20H15M5 15V7H19V15H5Z"
+                                              Fill="{ThemeResource TextFillColorPrimaryBrush}" />
+                                    </Viewbox>
+                                </Button>
+                                <Button Style="{StaticResource SessionInlineActionButtonStyle}"
+                                        Click="OnEditSessionClick"
+                                        ToolTipService.ToolTip="Edit session"
+                                        AutomationProperties.Name="Edit session">
+                                    <Viewbox Width="15" Height="15">
+                                        <!-- Iconify: mdi:pencil-outline -->
+                                        <Path Data="M20.71,7.04C21.1,6.65 21.1,6 20.71,5.63L18.37,3.29C18,2.9 17.35,2.9 16.96,3.29L15.12,5.12L18.87,8.87M3,17.25V21H6.75L17.81,9.93L14.06,6.18L3,17.25M20.71,7.04L18.37,4.7L17.6,5.46L19.93,7.79L20.71,7.04Z"
+                                              Fill="{ThemeResource TextFillColorPrimaryBrush}" />
+                                    </Viewbox>
+                                </Button>
+                            </StackPanel>
+                        </Grid>
+                    </TreeViewItem>
+                </DataTemplate>
+            </TreeView.ItemTemplate>
+        </TreeView>
+
+        <!-- Status -->
+        <TextBlock x:Name="StatusText"
+                   Grid.Row="3"
+                   Style="{StaticResource CaptionTextBlockStyle}"
+                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                   TextWrapping="Wrap" />
+    </Grid>
+</UserControl>
