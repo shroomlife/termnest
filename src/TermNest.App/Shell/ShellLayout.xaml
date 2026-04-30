@@ -10,9 +10,7 @@
 
     <Grid x:Name="RootGrid">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition x:Name="BottomSplitterRow" Height="Auto" />
             <RowDefinition x:Name="BottomStripRow" Height="Auto" />
         </Grid.RowDefinitions>
         <Grid.ColumnDefinitions>
@@ -21,73 +19,13 @@
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
 
-        <controls:ConnectionBar x:Name="ConnectBar"
-                                Grid.Row="0"
-                                Grid.ColumnSpan="3"
-                                ConnectRequested="OnConnectRequested" />
-
-        <Border Grid.Row="1" Grid.Column="0"
+        <Border Grid.Row="0" Grid.Column="0"
                 Background="{ThemeResource LayerOnAcrylicFillColorDefaultBrush}"
                 BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
                 BorderThickness="0,0,1,0">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <controls:SessionsPanel x:Name="SessionsPanelControl"
-                                        Grid.Row="0"
-                                        SessionInvoked="OnSessionInvoked" />
-                <Border Grid.Row="1" Padding="12,8" BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0">
-                    <StackPanel Spacing="8">
-                        <TextBlock Text="putty.exe path" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <Grid ColumnSpacing="6">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="PuttyPathBox"
-                                     Text="{x:Bind ViewModel.PuttyExePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     TextChanged="OnPuttyPathChanged" />
-                            <Button Grid.Column="1"
-                                    Width="44"
-                                    MinWidth="44"
-                                    Padding="0"
-                                    VerticalAlignment="Stretch"
-                                    Click="OnBrowsePuttyPathClick"
-                                    ToolTipService.ToolTip="Browse for putty.exe"
-                                    Content="..." />
-                        </Grid>
-                        <TextBlock Text="winscp.exe path" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <Grid ColumnSpacing="6">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="WinScpPathBox"
-                                     Text="{x:Bind ViewModel.WinScpExePath, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     TextChanged="OnWinScpPathChanged" />
-                            <Button Grid.Column="1"
-                                    Width="44"
-                                    MinWidth="44"
-                                    Padding="0"
-                                    VerticalAlignment="Stretch"
-                                    Click="OnBrowseWinScpPathClick"
-                                    ToolTipService.ToolTip="Browse for winscp.exe"
-                                    Content="..." />
-                        </Grid>
-                        <TextBlock Text="terminal font size" Style="{StaticResource CaptionTextBlockStyle}" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <NumberBox x:Name="TerminalFontSizeBox"
-                                   Value="{x:Bind ViewModel.TerminalFontSize, Mode=TwoWay}"
-                                   Minimum="10"
-                                   Maximum="28"
-                                   SmallChange="1"
-                                   LargeChange="2"
-                                   SpinButtonPlacementMode="Inline"
-                                   ValueChanged="OnTerminalFontSizeChanged" />
-                    </StackPanel>
-                </Border>
-            </Grid>
+            <controls:SessionsPanel x:Name="SessionsPanelControl"
+                                    SessionInvoked="OnSessionInvoked"
+                                    StatusMessage="OnSessionsPanelStatusMessage" />
         </Border>
 
         <!-- Drag handle for the side rail. Pointer-based manipulation lives in
@@ -96,7 +34,7 @@
              6px wide; the inner 1px rectangle paints the divider line, the
              surrounding transparent surface enlarges the hit-test target. -->
         <controls:SplitterHandle x:Name="SideRailSplitter"
-                                 Grid.Row="1" Grid.Column="1"
+                                 Grid.Row="0" Grid.Column="1"
                                  Width="6"
                                  Background="Transparent"
                                  ManipulationMode="TranslateX"
@@ -110,20 +48,20 @@
         </controls:SplitterHandle>
 
         <controls:SessionTabsControl x:Name="SessionTabs"
-                                     Grid.Row="1"
+                                     Grid.Row="0"
                                      Grid.Column="2"
                                      StatusMessage="OnTabsStatusMessage" />
 
         <Border x:Name="BottomStrip"
-                Grid.Row="3"
+                Grid.Row="1"
                 Grid.Column="0"
                 Grid.ColumnSpan="3"
                 Background="{ThemeResource LayerOnAcrylicFillColorDefaultBrush}"
                 BorderBrush="{ThemeResource DividerStrokeColorDefaultBrush}"
                 BorderThickness="0,1,0,0"
-                Padding="12,8"
+                Padding="12,6"
                 Visibility="Visible">
-            <Grid ColumnSpacing="12">
+            <Grid ColumnSpacing="8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
@@ -132,12 +70,17 @@
                            Text="{x:Bind ViewModel.StatusMessage, Mode=OneWay}"
                            Style="{StaticResource CaptionTextBlockStyle}"
                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           VerticalAlignment="Center" />
-                <TextBlock Grid.Column="1"
-                           Text="{x:Bind ViewModel.LayoutDisplayName, Mode=OneWay}"
-                           Style="{StaticResource CaptionTextBlockStyle}"
-                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                           VerticalAlignment="Center" />
+                           VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" />
+                <Button Grid.Column="1"
+                        Click="OnSettingsClick"
+                        Background="Transparent"
+                        BorderThickness="0"
+                        Padding="6,4"
+                        ToolTipService.ToolTip="Settings"
+                        AutomationProperties.Name="Settings">
+                    <FontIcon Glyph="&#xE713;" FontSize="14" />
+                </Button>
             </Grid>
         </Border>
     </Grid>

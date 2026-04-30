@@ -17,15 +17,7 @@
                  SelectionChanged="OnSelectionChanged"
                  CanReorderTabs="True"
                  CanDragTabs="False"
-                 CanTearOutTabs="False">
-            <TabView.TabStripHeader>
-                <TextBlock Margin="12,0,12,0"
-                           VerticalAlignment="Center"
-                           Style="{StaticResource CaptionTextBlockStyle}"
-                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                           Text="Sessions" />
-            </TabView.TabStripHeader>
-        </TabView>
+                 CanTearOutTabs="False" />
 
         <StackPanel x:Name="EmptyHint"
                     HorizontalAlignment="Center"
@@ -37,7 +29,7 @@
                        Style="{StaticResource SubtitleTextBlockStyle}"
                        HorizontalAlignment="Center"
                        Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-            <TextBlock Text="Pick a session from the left rail or use Quick Connect."
+            <TextBlock Text="Pick a session from the left rail to get started."
                        Style="{StaticResource BodyTextBlockStyle}"
                        HorizontalAlignment="Center"
                        Foreground="{ThemeResource TextFillColorTertiaryBrush}" />

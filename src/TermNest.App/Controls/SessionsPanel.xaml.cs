@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Media;
 using TermNest.Core.Diagnostics;
 using TermNest.Core.Sessions;
 using Windows.ApplicationModel.DataTransfer;
+using Windows.Storage.Pickers;
 
 namespace TermNest.App.Controls;
 
@@ -17,13 +18,21 @@ public sealed partial class SessionsPanel : UserControl
 {
     public event EventHandler<SessionData>? SessionInvoked;
 
+    /// <summary>
+    /// Bubbles transient status text (clipboard copies, errors, save results)
+    /// up to the shell so a single bottom-strip footer renders every message.
+    /// The shell handles auto-clear timing.
+    /// </summary>
+    public event EventHandler<string>? StatusMessage;
+
     private const double SessionEditorDialogWidth = 900;
     private const double SessionEditorDialogMaxWidth = 980;
     private const double SessionEditorDialogMaxHeight = 720;
 
     private SessionStore? _store;
     private List<SessionData> _allSessions = new();
-    private SessionTreeNode _allTree = new() { Name = "PuTTY Sessions", Path = string.Empty, IsFolder = true };
+    private List<string> _emptyFolders = new();
+    private SessionTreeNode _allTree = new() { Name = "Sessions", Path = string.Empty, IsFolder = true };
     private static readonly TimeSpan DuplicateInvokeWindow = TimeSpan.FromMilliseconds(750);
     private string? _lastInvokedSessionId;
     private DateTimeOffset _lastInvokedAtUtc = DateTimeOffset.MinValue;
@@ -32,8 +41,6 @@ public sealed partial class SessionsPanel : UserControl
     private HashSet<string>? _expandedFolderPaths;
     private bool _isApplyingTreeState;
     private bool _isSessionEditorDialogOpen;
-    private DispatcherTimer? _statusClearTimer;
-    private static readonly TimeSpan StatusAutoClearDelay = TimeSpan.FromSeconds(5);
 
     public string WinScpExePath { get; set; } = @"C:\Program Files (x86)\WinSCP\WinSCP.exe";
 
@@ -118,11 +125,18 @@ public sealed partial class SessionsPanel : UserControl
     {
         if (_store == null) return;
 
-        _allSessions = await _store.LoadAsync().ConfigureAwait(true);
-        _allTree = SessionTreeNode.BuildTree(_allSessions);
+        SessionStoreSnapshot snapshot = await _store.LoadAsync().ConfigureAwait(true);
+        _allSessions = snapshot.Sessions;
+        _emptyFolders = snapshot.EmptyFolders;
+        _allTree = SessionTreeNode.BuildTree(_allSessions, _emptyFolders);
         ApplyFilter(SearchBox.Text);
         SetStatus($"{_allSessions.Count} session(s) loaded.");
     }
+
+    private Task PersistAsync() =>
+        _store == null
+            ? Task.CompletedTask
+            : _store.SaveAsync(_allSessions, _emptyFolders);
 
     private void ApplyFilter(string? query)
     {
@@ -232,31 +246,11 @@ public sealed partial class SessionsPanel : UserControl
     }
 
     /// <summary>
-    /// Sets the status footer and schedules an auto-clear after
-    /// <see cref="StatusAutoClearDelay"/> if no further update arrives.
-    /// Each call resets the timer, so an active stream of updates keeps
-    /// the message visible until the user stops doing things.
+    /// Raises a transient footer message. The shell owns the actual TextBlock
+    /// and the auto-clear timer — this control is just an emitter so all
+    /// status messages converge in one place.
     /// </summary>
-    private void SetStatus(string text)
-    {
-        StatusText.Text = text;
-
-        if (_statusClearTimer == null)
-        {
-            _statusClearTimer = new DispatcherTimer { Interval = StatusAutoClearDelay };
-            _statusClearTimer.Tick += (_, _) =>
-            {
-                _statusClearTimer!.Stop();
-                StatusText.Text = string.Empty;
-            };
-        }
-
-        _statusClearTimer.Stop();
-        if (!string.IsNullOrEmpty(text))
-        {
-            _statusClearTimer.Start();
-        }
-    }
+    private void SetStatus(string text) => StatusMessage?.Invoke(this, text ?? string.Empty);
 
     private bool TryCopyHost(SessionData session)
     {
@@ -750,6 +744,8 @@ public sealed partial class SessionsPanel : UserControl
             XamlRoot = XamlRoot,
             MinWidth = SessionEditorDialogWidth,
             MaxWidth = SessionEditorDialogMaxWidth,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
         };
         dialog.Resources["ContentDialogMinWidth"] = SessionEditorDialogWidth;
         dialog.Resources["ContentDialogMaxWidth"] = SessionEditorDialogMaxWidth;
@@ -804,7 +800,14 @@ public sealed partial class SessionsPanel : UserControl
             _allSessions[index] = draft;
         }
 
-        await _store.SaveAsync(_allSessions).ConfigureAwait(true);
+        // The session now occupies its folder path, so drop any matching
+        // empty-folder placeholder; nested ancestors stay (no-op if absent).
+        if (!string.IsNullOrWhiteSpace(draft.FolderPath))
+        {
+            _emptyFolders.RemoveAll(f => string.Equals(f, draft.FolderPath, StringComparison.OrdinalIgnoreCase));
+        }
+
+        await PersistAsync().ConfigureAwait(true);
         EnsureExplicitExpansionSet();
         if (!string.IsNullOrWhiteSpace(draft.FolderPath))
         {
@@ -830,6 +833,8 @@ public sealed partial class SessionsPanel : UserControl
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Close,
             XamlRoot = XamlRoot,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
         };
 
         ContentDialogResult result = await dialog.ShowAsync();
@@ -845,7 +850,7 @@ public sealed partial class SessionsPanel : UserControl
             return;
         }
 
-        await _store.SaveAsync(_allSessions).ConfigureAwait(true);
+        await PersistAsync().ConfigureAwait(true);
         await ReloadAsync().ConfigureAwait(true);
         SetStatus($"Deleted {DisplayNameFor(session)}.");
     }
@@ -1053,4 +1058,175 @@ public sealed partial class SessionsPanel : UserControl
     private static string? NullIfWhiteSpace(string value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    private async void OnNewFolderClick(object sender, RoutedEventArgs e)
+    {
+        if (_store == null)
+        {
+            SetStatus("Cannot create folder — session store not initialised.");
+            return;
+        }
+
+        TextBox nameBox = new()
+        {
+            PlaceholderText = "Folder name (use / for nesting)",
+            MinWidth = 320,
+        };
+
+        ContentDialog dialog = new()
+        {
+            Title = "New folder",
+            Content = nameBox,
+            PrimaryButtonText = "Create",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        ContentDialogResult result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary)
+        {
+            return;
+        }
+
+        string folderPath = NormalizeSessionId(nameBox.Text);
+        if (string.IsNullOrWhiteSpace(folderPath))
+        {
+            SetStatus("Folder name is required.");
+            return;
+        }
+
+        // Reject if a session of the same name already exists at this path.
+        if (_allSessions.Any(s => string.Equals(s.SessionId, folderPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            SetStatus($"A session already uses the path \"{folderPath}\".");
+            return;
+        }
+
+        if (_emptyFolders.Any(f => string.Equals(f, folderPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            SetStatus($"Folder \"{folderPath}\" already exists.");
+            return;
+        }
+
+        _emptyFolders.Add(folderPath);
+        await PersistAsync().ConfigureAwait(true);
+
+        EnsureExplicitExpansionSet();
+        _expandedFolderPaths!.Add(folderPath);
+
+        await ReloadAsync().ConfigureAwait(true);
+        SetStatus($"Created folder \"{folderPath}\".");
+    }
+
+    private async void OnImportClick(object sender, RoutedEventArgs e)
+    {
+        if (_store == null)
+        {
+            SetStatus("Cannot import — session store not initialised.");
+            return;
+        }
+
+        FileOpenPicker picker = new();
+        WinRT.Interop.InitializeWithWindow.Initialize(picker, App.WindowHandle);
+        picker.SuggestedStartLocation = PickerLocationId.DocumentsLibrary;
+        picker.FileTypeFilter.Add(".xml");
+
+        Windows.Storage.StorageFile? file = await picker.PickSingleFileAsync();
+        if (file == null)
+        {
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<SessionData> imported = ImportSuperPuttySessionsXml(file.Path);
+            if (imported.Count == 0)
+            {
+                SetStatus($"No sessions found in {Path.GetFileName(file.Path)}.");
+                return;
+            }
+
+            // Merge by SessionId — imported entries overwrite existing matches.
+            Dictionary<string, SessionData> map = _allSessions.ToDictionary(
+                s => s.SessionId, StringComparer.OrdinalIgnoreCase);
+            foreach (SessionData s in imported)
+            {
+                map[s.SessionId] = s;
+            }
+            _allSessions = map.Values.ToList();
+
+            await PersistAsync().ConfigureAwait(true);
+            await ReloadAsync().ConfigureAwait(true);
+            SetStatus($"Imported {imported.Count} session(s) from {Path.GetFileName(file.Path)}.");
+        }
+        catch (Exception ex)
+        {
+            DebugLog.Write("SessionsPanel", $"Import failed: {ex}");
+            SetStatus($"Import failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Reads a SuperPuTTY 3.x <c>sessions.xml</c> and converts each entry to
+    /// a TermNest <see cref="SessionData"/>. The legacy file is an
+    /// <c>&lt;ArrayOfSessionData&gt;</c> with each session as a
+    /// <c>&lt;SessionData&gt;</c> element whose fields live on attributes.
+    /// Unknown attributes are ignored; missing ones get TermNest defaults.
+    /// </summary>
+    private static IReadOnlyList<SessionData> ImportSuperPuttySessionsXml(string xmlFilePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(xmlFilePath);
+        if (!File.Exists(xmlFilePath))
+        {
+            throw new FileNotFoundException("sessions.xml not found", xmlFilePath);
+        }
+
+        System.Xml.Linq.XDocument doc = System.Xml.Linq.XDocument.Load(xmlFilePath);
+        if (doc.Root == null)
+        {
+            return Array.Empty<SessionData>();
+        }
+
+        List<SessionData> result = new();
+        foreach (System.Xml.Linq.XElement element in doc.Root.Elements("SessionData"))
+        {
+            string sessionId = (string?)element.Attribute("SessionId") ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(sessionId))
+            {
+                continue;
+            }
+
+            string sessionName = (string?)element.Attribute("SessionName") ?? LastPathSegment(sessionId);
+            string protocolText = (string?)element.Attribute("Proto") ?? "SSH";
+            ConnectionProtocol protocol = Enum.TryParse(protocolText, ignoreCase: true, out ConnectionProtocol p)
+                ? p
+                : ConnectionProtocol.SSH;
+
+            int port = 22;
+            string? portText = (string?)element.Attribute("Port");
+            if (!string.IsNullOrWhiteSpace(portText) && int.TryParse(portText, out int parsedPort) && parsedPort is > 0 and <= 65535)
+            {
+                port = parsedPort;
+            }
+
+            result.Add(new SessionData
+            {
+                SessionId = NormalizeSessionId(sessionId),
+                SessionName = sessionName,
+                Host = (string?)element.Attribute("Host") ?? string.Empty,
+                Port = port,
+                Protocol = protocol,
+                Username = NullIfWhiteSpace((string?)element.Attribute("Username") ?? string.Empty),
+                PuttySession = NullIfWhiteSpace((string?)element.Attribute("PuttySession") ?? string.Empty),
+                ExtraArgs = NullIfWhiteSpace((string?)element.Attribute("ExtraArgs") ?? string.Empty),
+                SpslFileName = NullIfWhiteSpace((string?)element.Attribute("SPSLFileName") ?? string.Empty),
+                ImageKey = NullIfWhiteSpace((string?)element.Attribute("ImageKey") ?? string.Empty),
+                RemotePath = NullIfWhiteSpace((string?)element.Attribute("RemotePath") ?? string.Empty) ?? string.Empty,
+                LocalPath = NullIfWhiteSpace((string?)element.Attribute("LocalPath") ?? string.Empty) ?? string.Empty,
+            });
+        }
+        return result;
+    }
 }

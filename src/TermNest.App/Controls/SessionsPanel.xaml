@@ -25,18 +25,28 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- Header -->
-        <Grid Grid.Row="0" ColumnSpacing="8">
+        <Grid Grid.Row="0" ColumnSpacing="6">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBlock Text="Sessions" Style="{StaticResource SubtitleTextBlockStyle}" VerticalAlignment="Center" />
-            <Button Grid.Column="1" Click="OnNewSessionClick" ToolTipService.ToolTip="New session">
+            <Button Grid.Column="1" Click="OnNewFolderClick" ToolTipService.ToolTip="New folder">
+                <!-- Segoe Fluent: NewFolder -->
+                <FontIcon Glyph="&#xE8F4;" FontSize="14" />
+            </Button>
+            <Button Grid.Column="2" Click="OnNewSessionClick" ToolTipService.ToolTip="New session">
+                <!-- Segoe Fluent: Add -->
                 <FontIcon Glyph="&#xE710;" FontSize="14" />
+            </Button>
+            <Button Grid.Column="3" Click="OnImportClick" ToolTipService.ToolTip="Import sessions.xml from SuperPuTTY">
+                <!-- Segoe Fluent: Import -->
+                <FontIcon Glyph="&#xE8B5;" FontSize="14" />
             </Button>
         </Grid>
 
@@ -146,12 +156,5 @@
                 </DataTemplate>
             </TreeView.ItemTemplate>
         </TreeView>
-
-        <!-- Status -->
-        <TextBlock x:Name="StatusText"
-                   Grid.Row="3"
-                   Style="{StaticResource CaptionTextBlockStyle}"
-                   Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                   TextWrapping="Wrap" />
     </Grid>
 </UserControl>

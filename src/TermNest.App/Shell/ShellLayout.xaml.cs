@@ -11,12 +11,11 @@ using Windows.Storage;
 namespace TermNest.App.Shell;
 
 /// <summary>
-/// The single fixed shell that hosts the connection bar, session tree, tab
-/// area and an optional bottom status strip. Layout dimensions and the
-/// open-session list live in <see cref="LayoutData"/> JSON files; ContentSizer
-/// (CommunityToolkit.WinUI) gives users splitter-based resizing without
-/// pulling in a full docking library — Phase 4 trade-off, detachable docks
-/// land in 4.1.
+/// The single fixed shell that hosts the session tree, tab area and a status
+/// strip at the bottom. The bottom strip carries every transient status
+/// message (clipboard copies, "opening …", connection results) and a settings
+/// button that opens an Edit-Session-style dialog for app-wide preferences.
+/// Layout dimensions live in <see cref="LayoutData"/> JSON.
 /// </summary>
 public sealed partial class ShellLayout : UserControl
 {
@@ -28,10 +27,12 @@ public sealed partial class ShellLayout : UserControl
     private const double DefaultTerminalFontSize = 15;
     private const double MinTerminalFontSize = 10;
     private const double MaxTerminalFontSize = 28;
+    private static readonly TimeSpan StatusAutoClearDelay = TimeSpan.FromSeconds(5);
 
     public ShellViewModel ViewModel { get; } = new();
 
     private LayoutStore? _layoutStore;
+    private KnownHostsStore? _knownHostsStore;
     private SessionStore? _sessionStore;
     private LayoutData _activeLayout = new() { Name = "default", IsDefault = true };
     private bool _settingsLoaded;
@@ -39,6 +40,8 @@ public sealed partial class ShellLayout : UserControl
     private double _sideRailDragStartWidth;
     private double _sideRailDragStartX;
     private uint _sideRailDragPointerId;
+    private DispatcherTimer? _statusClearTimer;
+    private bool _isSettingsDialogOpen;
     private const double MinSideRailWidth = 200;
     private const double MaxSideRailWidth = 800;
 
@@ -66,7 +69,7 @@ public sealed partial class ShellLayout : UserControl
             // OnLoaded is async void; surface any post-await failure in the
             // status bar so it isn't silently dropped into the unhandled
             // exception sink.
-            ViewModel.StatusMessage = $"Startup error: {ex.Message}";
+            SetStatus($"Startup error: {ex.Message}");
         }
     }
 
@@ -83,8 +86,96 @@ public sealed partial class ShellLayout : UserControl
         SessionsPanelControl.LocalStateDirectory = localState;
         _sessionStore = new SessionStore(localState);
         _layoutStore = new LayoutStore(localState);
+        _knownHostsStore = new KnownHostsStore(localState);
+
+        // Wire host-key verification: SshTerminalSession will call back into
+        // PromptForHostKeyAsync on first connect, marshalled to the UI thread.
+        SessionTabs.HostKeyStore = _knownHostsStore;
+        SessionTabs.HostKeyPrompt = PromptForHostKeyAsync;
 
         await LoadActiveLayoutAsync().ConfigureAwait(true);
+    }
+
+    /// <summary>
+    /// Asks the user whether to trust an unknown SSH host key. Invoked from a
+    /// background SSH.NET thread, so it marshals to the UI thread for the
+    /// dialog and then back. The fingerprint is shown in the SHA-256 base64
+    /// form OpenSSH uses, prefixed with <c>SHA256:</c> so users can compare
+    /// against <c>ssh-keygen -lf</c> output.
+    /// </summary>
+    private Task<bool> PromptForHostKeyAsync(HostKeyPrompt prompt)
+    {
+        TaskCompletionSource<bool> tcs = new();
+
+        bool queued = DispatcherQueue.TryEnqueue(async () =>
+        {
+            try
+            {
+                StackPanel panel = new() { Spacing = 10 };
+                panel.Children.Add(new TextBlock
+                {
+                    Text = $"You are connecting to {prompt.Host}:{prompt.Port} for the first time.",
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                panel.Children.Add(new TextBlock
+                {
+                    Text = "Verify the fingerprint below matches the one your administrator gave you (or what `ssh-keygen -lf` reports on the server).",
+                    TextWrapping = TextWrapping.Wrap,
+                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                });
+
+                Border fingerprintBox = new()
+                {
+                    Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["LayerOnAcrylicFillColorDefaultBrush"],
+                    BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"],
+                    BorderThickness = new Thickness(1),
+                    CornerRadius = new CornerRadius(4),
+                    Padding = new Thickness(10, 8, 10, 8),
+                };
+                StackPanel fpStack = new() { Spacing = 4 };
+                fpStack.Children.Add(new TextBlock
+                {
+                    Text = $"Algorithm: {prompt.Algorithm}",
+                    Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+                    Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+                });
+                fpStack.Children.Add(new TextBlock
+                {
+                    Text = $"SHA256:{prompt.FingerprintSha256}",
+                    FontFamily = new Microsoft.UI.Xaml.Media.FontFamily("Consolas, Cascadia Mono, monospace"),
+                    IsTextSelectionEnabled = true,
+                    TextWrapping = TextWrapping.Wrap,
+                });
+                fingerprintBox.Child = fpStack;
+                panel.Children.Add(fingerprintBox);
+
+                ContentDialog dialog = new()
+                {
+                    Title = "Trust this host key?",
+                    Content = panel,
+                    PrimaryButtonText = "Trust and connect",
+                    CloseButtonText = "Cancel",
+                    DefaultButton = ContentDialogButton.Close,
+                    XamlRoot = XamlRoot,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                };
+
+                ContentDialogResult result = await dialog.ShowAsync();
+                tcs.TrySetResult(result == ContentDialogResult.Primary);
+            }
+            catch (Exception ex)
+            {
+                TermNest.Core.Diagnostics.DebugLog.Write("Shell", $"Host key prompt failed: {ex.Message}");
+                tcs.TrySetResult(false);
+            }
+        });
+
+        if (!queued)
+        {
+            tcs.TrySetResult(false);
+        }
+        return tcs.Task;
     }
 
     private static string ResolveLocalStateDirectory()
@@ -122,7 +213,7 @@ public sealed partial class ShellLayout : UserControl
         // terminal integration is still evolving.
         if (_activeLayout.OpenSessionIds.Count > 0)
         {
-            ViewModel.StatusMessage = "Previous session tabs were not auto-restored.";
+            SetStatus("Previous session tabs were not auto-restored.");
             _activeLayout.OpenSessionIds.Clear();
         }
     }
@@ -133,7 +224,6 @@ public sealed partial class ShellLayout : UserControl
         BottomStripRow.Height = GridLength.Auto;
         BottomStrip.Visibility = Visibility.Visible;
         SessionsPanelControl.ExpandedFolderPaths = _activeLayout.ExpandedSessionFolderPaths;
-        ViewModel.LayoutDisplayName = $"Layout: {_activeLayout.Name}";
         LayoutWindowPlacementLoaded?.Invoke(this, _activeLayout.WindowPlacement);
     }
 
@@ -169,7 +259,7 @@ public sealed partial class ShellLayout : UserControl
         catch (Exception ex)
         {
             TermNest.Core.Diagnostics.DebugLog.Write("Shell", $"SafeOpenAsync caught {ex.GetType().Name}: {ex}");
-            ViewModel.StatusMessage = $"Failed to open {session.SessionName}: {ex.Message}";
+            SetStatus($"Failed to open {session.SessionName}: {ex.Message}");
         }
     }
 
@@ -179,87 +269,189 @@ public sealed partial class ShellLayout : UserControl
         await SafeOpenAsync(session).ConfigureAwait(true);
     }
 
-    private async void OnConnectRequested(object sender, SessionData session)
-    {
-        await SafeOpenAsync(session).ConfigureAwait(true);
-    }
+    private void OnTabsStatusMessage(object? sender, string message) => SetStatus(message);
 
-    private void OnTabsStatusMessage(object? sender, string message)
-    {
-        ViewModel.StatusMessage = message;
-    }
+    private void OnSessionsPanelStatusMessage(object? sender, string message) => SetStatus(message);
 
-    private void OnTerminalFontSizeChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    /// <summary>
+    /// Single sink for every transient footer message — clipboard copies,
+    /// session opens, save/load results, errors. Restarts an auto-clear
+    /// timer so a quiet UI eventually drops back to an empty status.
+    /// </summary>
+    private void SetStatus(string text)
     {
-        double fontSize = NormalizeTerminalFontSize(args.NewValue);
-        if (Math.Abs(fontSize - args.NewValue) > 0.01)
+        ViewModel.StatusMessage = text ?? string.Empty;
+
+        if (_statusClearTimer == null)
         {
-            sender.Value = fontSize;
-            return;
+            _statusClearTimer = new DispatcherTimer { Interval = StatusAutoClearDelay };
+            _statusClearTimer.Tick += (_, _) =>
+            {
+                _statusClearTimer!.Stop();
+                ViewModel.StatusMessage = string.Empty;
+            };
         }
 
-        ViewModel.TerminalFontSize = fontSize;
-        SessionTabs.TerminalFontSize = fontSize;
+        _statusClearTimer.Stop();
+        if (!string.IsNullOrEmpty(text))
+        {
+            _statusClearTimer.Start();
+        }
+    }
+
+    private async void OnSettingsClick(object sender, RoutedEventArgs e)
+    {
+        if (_isSettingsDialogOpen) return;
+
+        _isSettingsDialogOpen = true;
+        try
+        {
+            await ShowSettingsDialogAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            SetStatus($"Settings failed: {ex.Message}");
+        }
+        finally
+        {
+            _isSettingsDialogOpen = false;
+        }
+    }
+
+    private async Task ShowSettingsDialogAsync()
+    {
+        TextBox puttyBox = new()
+        {
+            Text = ViewModel.PuttyExePath,
+            PlaceholderText = @"C:\Program Files\PuTTY\putty.exe",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        TextBox winScpBox = new()
+        {
+            Text = ViewModel.WinScpExePath,
+            PlaceholderText = @"C:\Program Files (x86)\WinSCP\WinSCP.exe",
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+        NumberBox fontSizeBox = new()
+        {
+            Value = ViewModel.TerminalFontSize,
+            Minimum = MinTerminalFontSize,
+            Maximum = MaxTerminalFontSize,
+            SmallChange = 1,
+            LargeChange = 2,
+            SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        };
+
+        Button browsePutty = CreateBrowseButton("Browse for putty.exe");
+        browsePutty.Click += async (_, _) =>
+        {
+            string? picked = await PickExecutablePathAsync(
+                "Select putty.exe", puttyBox.Text, "putty.exe").ConfigureAwait(true);
+            if (picked != null) puttyBox.Text = picked;
+        };
+        Button browseWinScp = CreateBrowseButton("Browse for winscp.exe");
+        browseWinScp.Click += async (_, _) =>
+        {
+            string? picked = await PickExecutablePathAsync(
+                "Select winscp.exe", winScpBox.Text, "WinSCP.exe").ConfigureAwait(true);
+            if (picked != null) winScpBox.Text = picked;
+        };
+
+        StackPanel content = new() { Spacing = 22, Width = 520 };
+        content.Children.Add(CreatePathRow("PuTTY executable", puttyBox, browsePutty));
+        content.Children.Add(CreatePathRow("WinSCP executable", winScpBox, browseWinScp));
+        content.Children.Add(CreateFieldSection(
+            "Terminal font size",
+            "Used in every newly opened terminal tab and applied immediately to open tabs.",
+            fontSizeBox));
+
+        ContentDialog dialog = new()
+        {
+            Title = "Settings",
+            Content = content,
+            PrimaryButtonText = "Save",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            XamlRoot = XamlRoot,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+
+        ContentDialogResult result = await dialog.ShowAsync();
+        if (result != ContentDialogResult.Primary) return;
+
+        string newPutty = puttyBox.Text?.Trim() ?? string.Empty;
+        string newWinScp = winScpBox.Text?.Trim() ?? string.Empty;
+        double newFontSize = NormalizeTerminalFontSize(fontSizeBox.Value);
+
+        ViewModel.PuttyExePath = newPutty;
+        ViewModel.WinScpExePath = newWinScp;
+        ViewModel.TerminalFontSize = newFontSize;
+        SessionsPanelControl.WinScpExePath = newWinScp;
+        SessionTabs.TerminalFontSize = newFontSize;
 
         if (_settingsLoaded)
         {
-            SaveTerminalFontSizeSetting(fontSize);
-            ViewModel.StatusMessage = $"Terminal font size: {fontSize:0}px";
+            SaveStringSetting(PuttyExePathSettingKey, newPutty);
+            SaveStringSetting(WinScpExePathSettingKey, newWinScp);
+            SaveTerminalFontSizeSetting(newFontSize);
         }
+
+        SetStatus("Settings saved.");
     }
 
-    private void OnWinScpPathChanged(object sender, TextChangedEventArgs e)
+    private static Button CreateBrowseButton(string tooltip) => new()
     {
-        string path = sender is TextBox textBox ? textBox.Text : ViewModel.WinScpExePath;
-        SessionsPanelControl.WinScpExePath = path;
-        if (_settingsLoaded)
+        Content = "...",
+        Width = 44,
+        MinWidth = 44,
+        Padding = new Thickness(0),
+        VerticalAlignment = VerticalAlignment.Stretch,
+    };
+
+    private static StackPanel CreatePathRow(string label, TextBox editor, Button browse)
+    {
+        ToolTipService.SetToolTip(browse, browse.Content);
+
+        Grid row = new() { ColumnSpacing = 8 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(editor, 0);
+        Grid.SetColumn(browse, 1);
+        row.Children.Add(editor);
+        row.Children.Add(browse);
+
+        StackPanel section = new() { Spacing = 6 };
+        section.Children.Add(new TextBlock
         {
-            SaveStringSetting(WinScpExePathSettingKey, path);
-        }
+            Text = label,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+        });
+        section.Children.Add(row);
+        return section;
     }
 
-    private void OnPuttyPathChanged(object sender, TextChangedEventArgs e)
+    private static StackPanel CreateFieldSection(string label, string hint, FrameworkElement editor)
     {
-        string path = sender is TextBox textBox ? textBox.Text : ViewModel.PuttyExePath;
-        if (_settingsLoaded)
+        StackPanel section = new() { Spacing = 6 };
+        section.Children.Add(new TextBlock
         {
-            SaveStringSetting(PuttyExePathSettingKey, path);
-        }
-    }
-
-    private async void OnBrowsePuttyPathClick(object sender, RoutedEventArgs e)
-    {
-        string? path = await PickExecutablePathAsync(
-            "Select putty.exe",
-            ViewModel.PuttyExePath,
-            "putty.exe").ConfigureAwait(true);
-        if (path == null)
+            Text = label,
+            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+        });
+        section.Children.Add(editor);
+        if (!string.IsNullOrWhiteSpace(hint))
         {
-            return;
+            section.Children.Add(new TextBlock
+            {
+                Text = hint,
+                Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                TextWrapping = TextWrapping.Wrap,
+            });
         }
-
-        ViewModel.PuttyExePath = path;
-        PuttyPathBox.Text = path;
-        SaveStringSetting(PuttyExePathSettingKey, path);
-        ViewModel.StatusMessage = $"PuTTY executable: {path}";
-    }
-
-    private async void OnBrowseWinScpPathClick(object sender, RoutedEventArgs e)
-    {
-        string? path = await PickExecutablePathAsync(
-            "Select winscp.exe",
-            ViewModel.WinScpExePath,
-            "WinSCP.exe").ConfigureAwait(true);
-        if (path == null)
-        {
-            return;
-        }
-
-        ViewModel.WinScpExePath = path;
-        WinScpPathBox.Text = path;
-        SessionsPanelControl.WinScpExePath = path;
-        SaveStringSetting(WinScpExePathSettingKey, path);
-        ViewModel.StatusMessage = $"WinSCP executable: {path}";
+        return section;
     }
 
     private Task<string?> PickExecutablePathAsync(string title, string currentPath, string fallbackFileName)
@@ -273,7 +465,7 @@ public sealed partial class ShellLayout : UserControl
         }
         catch (Exception ex)
         {
-            ViewModel.StatusMessage = $"File picker failed: {ex.Message}";
+            SetStatus($"File picker failed: {ex.Message}");
             return Task.FromResult<string?>(null);
         }
     }
@@ -436,7 +628,7 @@ public sealed partial class ShellLayout : UserControl
             }
             catch (Exception ex)
             {
-                ViewModel.StatusMessage = $"Could not save layout: {ex.Message}";
+                SetStatus($"Could not save layout: {ex.Message}");
             }
         }
     }

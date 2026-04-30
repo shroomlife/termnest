@@ -2,10 +2,37 @@
 <html lang="en">
 <head>
     <meta charset="utf-8" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; style-src 'self' 'unsafe-inline' file:; script-src 'self' 'unsafe-inline' file:;" />
+    <!-- CSP: page is served from a virtual https:// origin (see
+         CoreWebView2.SetVirtualHostNameToFolderMapping) so 'self' actually
+         restricts loading to the bundled folder. 'unsafe-inline' is still
+         required because the page has one inline <style> + one inline
+         <script> block; tightening to a per-load nonce is a follow-up. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:;" />
     <title>terminal</title>
     <link rel="stylesheet" href="vendor/xterm/xterm.css" />
     <style>
+        /* Fira Code is bundled locally so the terminal never reaches out to a
+           CDN at startup and works offline. Both weights are loaded eagerly
+           because xterm measures its glyph cell on first render and would
+           otherwise paint a frame in the fallback metric before the WOFF2
+           arrives. font-display: block keeps the cursor invisible until the
+           real font is ready, avoiding a brief flash of Cascadia Mono. */
+        @font-face {
+            font-family: "Fira Code";
+            font-style: normal;
+            font-weight: 400;
+            font-display: block;
+            src: url("vendor/fonts/firacode/FiraCode-Regular.woff2") format("woff2");
+        }
+
+        @font-face {
+            font-family: "Fira Code";
+            font-style: normal;
+            font-weight: 700;
+            font-display: block;
+            src: url("vendor/fonts/firacode/FiraCode-Bold.woff2") format("woff2");
+        }
+
         :root {
             color-scheme: dark;
             --terminal-bg: #0c0c0c;
@@ -22,9 +49,12 @@
         }
 
         body {
-            font-family: "Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace;
+            font-family: "Fira Code", "Cascadia Mono", "Cascadia Code", Consolas, "Courier New", monospace;
             text-rendering: geometricPrecision;
             -webkit-font-smoothing: antialiased;
+            /* Fira Code has no italic cut. Disabling synthesis prevents the
+               browser from skewing glyphs to fake an italic variant, which
+               would break monospace alignment in xterm. */
             font-synthesis: none;
         }
 
@@ -106,7 +136,7 @@
             cursorBlink: true,
             cursorStyle: "block",
             drawBoldTextInBrightColors: false,
-            fontFamily: "\"Cascadia Mono\", \"Cascadia Code\", Consolas, \"Courier New\", monospace",
+            fontFamily: "\"Fira Code\", \"Cascadia Mono\", \"Cascadia Code\", Consolas, \"Courier New\", monospace",
             fontSize: defaultFontSize,
             fontWeight: 400,
             fontWeightBold: 600,
@@ -171,79 +201,100 @@
         }
 
         term.loadAddon(fitAddon);
-        term.open(terminalHost);
 
-        term.onData(data => {
-            post({ type: "data", data });
-        });
-
-        term.onResize(size => {
-            postResize(size.cols, size.rows);
-        });
-
-        term.onTitleChange(title => {
-            post({ type: "title", title });
-        });
-
-        term.onWriteParsed(() => {
-            if (sawBackendOutput && !postedPainted) {
-                postedPainted = true;
-                post({ type: "painted" });
-            }
-        });
-
-        terminalHost.addEventListener("pointerdown", () => term.focus());
-
-        new ResizeObserver(queueFit).observe(terminalHost);
-
-        window.host_write = text => {
-            const data = String(text ?? "");
-            if (data.length === 0) {
-                return;
-            }
-
-            sawBackendOutput = true;
-            term.write(data);
-        };
-
-        window.host_clear = () => {
-            term.clear();
-        };
-
-        window.host_focus = () => {
-            term.focus();
-        };
-
-        window.host_setFontSize = value => {
-            const parsed = Number(value);
-            const fontSize = Number.isFinite(parsed)
-                ? Math.min(Math.max(Math.round(parsed), 10), 28)
-                : defaultFontSize;
-
-            if (Math.abs(term.options.fontSize - fontSize) < 0.1) {
-                return;
-            }
-
-            term.options.fontSize = fontSize;
-            queueFit();
-        };
-
-        window.host_setTheme = json => {
+        // xterm measures its glyph cell on the first paint and caches that
+        // metric. If we open() before the WOFF2 has loaded, the measurement
+        // is taken with the fallback (Cascadia Mono) and every subsequent
+        // resize math is off until a font reflow event hits. Loading both
+        // weights up front and waiting for document.fonts.ready guarantees
+        // xterm sees Fira Code's metrics from frame zero.
+        async function ensureFontsLoaded() {
             try {
-                const nextTheme = JSON.parse(json);
-                term.options.theme = { ...term.options.theme, ...nextTheme };
-                if (nextTheme.background) {
-                    document.documentElement.style.setProperty("--terminal-bg", nextTheme.background);
-                }
+                await Promise.all([
+                    document.fonts.load("400 16px \"Fira Code\""),
+                    document.fonts.load("700 16px \"Fira Code\""),
+                ]);
+                await document.fonts.ready;
             } catch (error) {
-                post({ type: "log", message: `theme failed: ${error.message}` });
+                post({ type: "log", message: `font load failed: ${error.message}` });
             }
-        };
+        }
 
-        requestAnimationFrame(() => {
-            refit();
-            post({ type: "ready" });
-            term.focus();
+        ensureFontsLoaded().then(() => {
+            term.open(terminalHost);
+
+            term.onData(data => {
+                post({ type: "data", data });
+            });
+
+            term.onResize(size => {
+                postResize(size.cols, size.rows);
+            });
+
+            term.onTitleChange(title => {
+                post({ type: "title", title });
+            });
+
+            term.onWriteParsed(() => {
+                if (sawBackendOutput && !postedPainted) {
+                    postedPainted = true;
+                    post({ type: "painted" });
+                }
+            });
+
+            terminalHost.addEventListener("pointerdown", () => term.focus());
+
+            new ResizeObserver(queueFit).observe(terminalHost);
+
+            window.host_write = text => {
+                const data = String(text ?? "");
+                if (data.length === 0) {
+                    return;
+                }
+
+                sawBackendOutput = true;
+                term.write(data);
+            };
+
+            window.host_clear = () => {
+                term.clear();
+            };
+
+            window.host_focus = () => {
+                term.focus();
+            };
+
+            window.host_setFontSize = value => {
+                const parsed = Number(value);
+                const fontSize = Number.isFinite(parsed)
+                    ? Math.min(Math.max(Math.round(parsed), 10), 28)
+                    : defaultFontSize;
+
+                if (Math.abs(term.options.fontSize - fontSize) < 0.1) {
+                    return;
+                }
+
+                term.options.fontSize = fontSize;
+                queueFit();
+            };
+
+            window.host_setTheme = json => {
+                try {
+                    const nextTheme = JSON.parse(json);
+                    term.options.theme = { ...term.options.theme, ...nextTheme };
+                    if (nextTheme.background) {
+                        document.documentElement.style.setProperty("--terminal-bg", nextTheme.background);
+                    }
+                } catch (error) {
+                    post({ type: "log", message: `theme failed: ${error.message}` });
+                }
+            };
+
+            requestAnimationFrame(() => {
+                refit();
+                post({ type: "ready" });
+                term.focus();
+            });
         });
     </script>
 </body>

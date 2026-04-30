@@ -16,9 +16,6 @@ public partial class ShellViewModel : ObservableObject
     [ObservableProperty]
     public partial string StatusMessage { get; set; } = "Ready.";
 
-    [ObservableProperty]
-    public partial string LayoutDisplayName { get; set; } = "Layout: default";
-
     private static string ResolveDefaultPuttyPath()
     {
         string[] candidates =

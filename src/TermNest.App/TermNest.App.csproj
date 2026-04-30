@@ -69,12 +69,17 @@
     <HasPackageAndPublishMenu>true</HasPackageAndPublishMenu>
   </PropertyGroup>
 
-  <!-- Copy the produced .msix to dist/ root after Release build so the
-       output isn't buried under nested architecture/version folders. -->
+  <!-- Copy the produced .msix and the public .cer to dist/ root after Release
+       build so the artefacts aren't buried under nested architecture/version
+       folders. The .cer is the public part of the signing certificate the
+       MSBuild pipeline emits next to the package; release consumers need it
+       to trust the signature on first install. -->
   <Target Name="CopyMsixToDistRoot" AfterTargets="Build" Condition="'$(Configuration)'=='Release' AND '$(GenerateAppxPackageOnBuild)'=='true'">
     <ItemGroup>
       <MsixFiles Include="$(AppxPackageDir)**\TermNest.App_*.msix" />
+      <CerFiles Include="$(AppxPackageDir)**\TermNest.App_*.cer" />
     </ItemGroup>
     <Copy SourceFiles="@(MsixFiles)" DestinationFolder="$(AppxPackageDir)" />
+    <Copy SourceFiles="@(CerFiles)" DestinationFolder="$(AppxPackageDir)" Condition="'@(CerFiles)' != ''" />
   </Target>
 </Project>

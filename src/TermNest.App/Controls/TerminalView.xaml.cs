@@ -37,6 +37,19 @@ public sealed partial class TerminalView : UserControl
         Loaded += OnLoaded;
     }
 
+    /// <summary>
+    /// Persistent host-key store. Set by the parent before the SSH connect.
+    /// Required for SSH protocols; if null when an SSH connect starts,
+    /// <see cref="StartSshAsync"/> throws to refuse the unsafe path.
+    /// </summary>
+    public KnownHostsStore? HostKeyStore { get; set; }
+
+    /// <summary>
+    /// Async callback the host UI implements to ask the user whether to
+    /// trust an unknown host key. Required for SSH protocols.
+    /// </summary>
+    public HostKeyPromptDelegate? HostKeyPrompt { get; set; }
+
     public double TerminalFontSize
     {
         get => _terminalFontSize;
@@ -56,6 +69,8 @@ public sealed partial class TerminalView : UserControl
         }
     }
 
+    private const string VirtualHostName = "termnest.local";
+
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
         Loaded -= OnLoaded;
@@ -63,9 +78,22 @@ public sealed partial class TerminalView : UserControl
         {
             await WebView.EnsureCoreWebView2Async();
             WebView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+            HardenWebView2Settings(WebView.CoreWebView2.Settings);
             DebugLog.Write("TerminalView", "WebView2 ready");
 
-            string terminalHostPath = ResolveTerminalHostPath();
+            string terminalAssetsDir = ResolveTerminalAssetsDirectory();
+
+            // Map the bundled Assets/Terminal folder to a synthetic https://
+            // origin. This gives the page a real, stable origin so CSP 'self'
+            // works as intended, fetch() resolves relative URLs, and any
+            // future Worker / WebGL addon can load. Plain file:// would treat
+            // every asset as a null/opaque origin and disable those features.
+            // Reference: https://learn.microsoft.com/dotnet/api/microsoft.web.webview2.core.corewebview2.setvirtualhostnametofoldermapping
+            WebView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                VirtualHostName,
+                terminalAssetsDir,
+                Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
+
             WebView.CoreWebView2.NavigationCompleted += (_, args) =>
             {
                 if (!args.IsSuccess)
@@ -74,10 +102,9 @@ public sealed partial class TerminalView : UserControl
                 }
             };
 
-            // Navigate to the packaged file so the local xterm.js/css assets
-            // resolve relative to index.html without network or CDN access.
-            WebView.CoreWebView2.Navigate(new Uri(terminalHostPath).AbsoluteUri);
-            DebugLog.Write("TerminalView", $"Terminal page navigating: {terminalHostPath}");
+            string terminalUri = $"https://{VirtualHostName}/index.html";
+            WebView.CoreWebView2.Navigate(terminalUri);
+            DebugLog.Write("TerminalView", $"Terminal page navigating: {terminalUri}");
 
             // The page posts a {type:"ready"} message from local script; that's
             // when we kick off the terminal process if a session is queued.
@@ -90,14 +117,41 @@ public sealed partial class TerminalView : UserControl
         }
     }
 
-    private static string ResolveTerminalHostPath()
+    private static string ResolveTerminalAssetsDirectory()
     {
-        string? path = ResolveAssetPath(Path.Combine("Terminal", "index.html"));
-        if (path == null)
+        // The virtual host is mapped to the *folder* that contains
+        // index.html, so xterm.js / WOFF2 / addons resolve via relative URLs.
+        string? indexPath = ResolveAssetPath(Path.Combine("Terminal", "index.html"));
+        if (indexPath == null)
         {
             throw new FileNotFoundException("Terminal host page was not found in packaged assets.");
         }
-        return path;
+        return Path.GetDirectoryName(indexPath)
+            ?? throw new InvalidOperationException("Terminal host directory could not be resolved.");
+    }
+
+    /// <summary>
+    /// Disables WebView2 features that don't make sense for a chromeless
+    /// terminal surface (browser autofill, password autosave, swipe-to-go-back
+    /// gestures, the built-in error page, the status bar). Keeps the default
+    /// context menu and the standard browser accelerator keys so users can
+    /// still copy/paste / select text the usual way. Dev tools are gated on
+    /// the build configuration.
+    /// </summary>
+    private static void HardenWebView2Settings(Microsoft.Web.WebView2.Core.CoreWebView2Settings s)
+    {
+        s.IsBuiltInErrorPageEnabled = false;
+        s.IsStatusBarEnabled = false;
+        s.IsZoomControlEnabled = false;
+        s.IsPasswordAutosaveEnabled = false;
+        s.IsGeneralAutofillEnabled = false;
+        s.IsSwipeNavigationEnabled = false;
+        s.AreHostObjectsAllowed = false;
+#if DEBUG
+        s.AreDevToolsEnabled = true;
+#else
+        s.AreDevToolsEnabled = false;
+#endif
     }
 
     private static string? ResolveAssetPath(string relativeAssetPath)
@@ -214,6 +268,14 @@ public sealed partial class TerminalView : UserControl
             await ExecuteJsAsync("host_focus()").ConfigureAwait(true);
             _connectTcs?.TrySetResult();
         }
+        catch (HostKeyVerificationException ex)
+        {
+            // Already user-readable: emitted by SshTerminalSession when the
+            // user rejected the fingerprint or the stored key changed.
+            DebugLog.Write("TerminalView", $"Host key verification failed: {ex.Message}");
+            ShowStatus("Host key not trusted", ex.Message, spinner: false);
+            _connectTcs?.TrySetException(ex);
+        }
         catch (Renci.SshNet.Common.SshAuthenticationException ex)
         {
             DebugLog.Write("TerminalView", $"SSH auth failed: {ex.Message}");
@@ -236,7 +298,13 @@ public sealed partial class TerminalView : UserControl
 
     private async Task StartSshAsync(SessionData session)
     {
-        _ssh = new SshTerminalSession(session);
+        if (HostKeyStore == null || HostKeyPrompt == null)
+        {
+            throw new InvalidOperationException(
+                "Host key verification is not configured. Refusing the SSH connect to avoid unverified host keys.");
+        }
+
+        _ssh = new SshTerminalSession(session, HostKeyStore, HostKeyPrompt);
         _ssh.DataReceived += OnSshDataReceived;
         _ssh.Closed += OnSshClosed;
         _ssh.Error += (_, msg) => DispatcherQueue.TryEnqueue(() => ShowStatus("Error", msg, spinner: false));

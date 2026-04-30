@@ -26,6 +26,18 @@ public sealed partial class SessionTabsControl : UserControl
 
     public int TabCount => Tabs.TabItems.Count;
 
+    /// <summary>
+    /// Forwarded to every new <see cref="TerminalView"/> so SSH connects can
+    /// pin / verify host keys. Set once by the shell during bootstrap.
+    /// </summary>
+    public KnownHostsStore? HostKeyStore { get; set; }
+
+    /// <summary>
+    /// Forwarded to every new <see cref="TerminalView"/>. The shell renders
+    /// the trust-prompt dialog from this delegate.
+    /// </summary>
+    public HostKeyPromptDelegate? HostKeyPrompt { get; set; }
+
     public double TerminalFontSize
     {
         get => _terminalFontSize;
@@ -138,6 +150,8 @@ public sealed partial class SessionTabsControl : UserControl
                 TerminalFontSize = TerminalFontSize,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Stretch,
+                HostKeyStore = HostKeyStore,
+                HostKeyPrompt = HostKeyPrompt,
             };
             item = new TabViewItem
             {
@@ -241,6 +255,8 @@ public sealed partial class SessionTabsControl : UserControl
                 TerminalFontSize = TerminalFontSize,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 VerticalAlignment = VerticalAlignment.Stretch,
+                HostKeyStore = HostKeyStore,
+                HostKeyPrompt = HostKeyPrompt,
             };
             item = new TabViewItem
             {
@@ -524,6 +540,8 @@ public sealed partial class SessionTabsControl : UserControl
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = this.XamlRoot,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
         };
 
         passwordBox.Loaded += (_, _) => passwordBox.Focus(FocusState.Programmatic);

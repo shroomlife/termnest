@@ -26,13 +26,19 @@ public sealed class SessionTreeNode
     /// Builds a folder hierarchy from a flat session collection. Sessions
     /// whose SessionId is "A/B/C" produce nested folders A &gt; B with the
     /// session as a leaf node "C". Folder names are sorted, sessions follow
-    /// folders alphabetically — matches the v3 default sort.
+    /// folders alphabetically.
+    ///
+    /// <paramref name="explicitFolders"/> ensures that folders without any
+    /// sessions still appear in the tree — they wouldn't otherwise, since
+    /// the structure is inferred from session paths.
     /// </summary>
-    public static SessionTreeNode BuildTree(IReadOnlyList<SessionData> sessions)
+    public static SessionTreeNode BuildTree(
+        IReadOnlyList<SessionData> sessions,
+        IReadOnlyCollection<string>? explicitFolders = null)
     {
         ArgumentNullException.ThrowIfNull(sessions);
 
-        SessionTreeNode root = new() { Name = "PuTTY Sessions", Path = string.Empty, IsFolder = true };
+        SessionTreeNode root = new() { Name = "Sessions", Path = string.Empty, IsFolder = true };
 
         // Build folder skeleton + place sessions.
         foreach (SessionData session in sessions.OrderBy(s => s.SessionId, StringComparer.OrdinalIgnoreCase))
@@ -51,14 +57,7 @@ public sealed class SessionTreeNode
             {
                 string folderName = segments[i];
                 string folderPath = string.Join('/', segments[..(i + 1)]);
-                SessionTreeNode? existing = parent.Children
-                    .FirstOrDefault(c => c.IsFolder && string.Equals(c.Name, folderName, StringComparison.OrdinalIgnoreCase));
-                if (existing == null)
-                {
-                    existing = new SessionTreeNode { Name = folderName, Path = folderPath, IsFolder = true };
-                    parent.Children.Add(existing);
-                }
-                parent = existing;
+                parent = EnsureFolder(parent, folderName, folderPath);
             }
 
             string leafName = segments[^1];
@@ -71,8 +70,39 @@ public sealed class SessionTreeNode
             });
         }
 
+        // Stitch in folders that have no sessions yet so the user's "New
+        // folder" / "Empty folder" entries persist across reloads.
+        if (explicitFolders != null)
+        {
+            foreach (string folderPath in explicitFolders.Where(p => !string.IsNullOrWhiteSpace(p)))
+            {
+                string[] segments = folderPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                SessionTreeNode parent = root;
+                for (int i = 0; i < segments.Length; i++)
+                {
+                    string folderName = segments[i];
+                    string subPath = string.Join('/', segments[..(i + 1)]);
+                    parent = EnsureFolder(parent, folderName, subPath);
+                }
+            }
+        }
+
         SortRecursive(root);
         return root;
+    }
+
+    private static SessionTreeNode EnsureFolder(SessionTreeNode parent, string folderName, string folderPath)
+    {
+        SessionTreeNode? existing = parent.Children
+            .FirstOrDefault(c => c.IsFolder && string.Equals(c.Name, folderName, StringComparison.OrdinalIgnoreCase));
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        SessionTreeNode created = new() { Name = folderName, Path = folderPath, IsFolder = true };
+        parent.Children.Add(created);
+        return created;
     }
 
     private static void SortRecursive(SessionTreeNode node)

@@ -1,0 +1,162 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build MSIX
+    runs-on: windows-latest
+
+    env:
+      PROJECT_PATH: src/TermNest.App/TermNest.App.csproj
+      PLATFORM: x64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+          dotnet-quality: "preview"
+
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          echo "tag_version=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Import signing certificate
+        id: cert_import
+        shell: pwsh
+        run: |
+          $pfxBytes = [Convert]::FromBase64String("${{ secrets.SIGNING_CERTIFICATE_BASE64 }}")
+          $pfxPath = "src/TermNest.App/TermNest_Dev.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+
+          $password = "${{ secrets.SIGNING_CERTIFICATE_PASSWORD }}"
+          if ($password) {
+            $securePassword = ConvertTo-SecureString -String $password -AsPlainText -Force
+            $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My -Password $securePassword
+          } else {
+            $cert = Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\CurrentUser\My
+          }
+
+          echo "thumbprint=$($cert.Thumbprint)" >> $env:GITHUB_OUTPUT
+          Write-Host "Certificate imported with thumbprint: $($cert.Thumbprint)"
+
+      - name: Restore NuGet packages
+        run: dotnet restore ${{ env.PROJECT_PATH }}
+
+      - name: Build signed MSIX
+        run: >
+          dotnet build ${{ env.PROJECT_PATH }}
+          -c Release
+          -p:Platform=${{ env.PLATFORM }}
+          -p:GenerateAppxPackageOnBuild=true
+          -p:UapAppxPackageBuildMode=SideloadOnly
+          -p:AppxPackageSigningEnabled=true
+          -p:PackageCertificateThumbprint=${{ steps.cert_import.outputs.thumbprint }}
+
+      - name: Find MSIX artifact
+        id: artifact
+        shell: bash
+        run: |
+          MSIX=$(find dist/ -maxdepth 1 -name "TermNest.App_*.msix" | head -1)
+          if [ -z "$MSIX" ]; then
+            echo "::error::No MSIX file found in dist/"
+            exit 1
+          fi
+          echo "msix_path=$MSIX" >> "$GITHUB_OUTPUT"
+          echo "msix_name=$(basename $MSIX)" >> "$GITHUB_OUTPUT"
+
+      - name: Find certificate
+        id: cert
+        shell: bash
+        run: |
+          CER=$(find dist/ -name "TermNest.App_*.cer" -type f | head -1)
+          if [ -n "$CER" ]; then
+            echo "cer_path=$CER" >> "$GITHUB_OUTPUT"
+            echo "cer_found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "cer_found=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload MSIX artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: msix-sideload
+          path: ${{ steps.artifact.outputs.msix_path }}
+
+      - name: Upload certificate artifact
+        if: steps.cert.outputs.cer_found == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: msix-certificate
+          path: ${{ steps.cert.outputs.cer_path }}
+
+  release:
+    name: Create GitHub Release
+    needs: [build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Extract version from tag
+        id: version
+        run: |
+          TAG="${GITHUB_REF#refs/tags/v}"
+          echo "tag_version=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Download sideload MSIX
+        uses: actions/download-artifact@v8
+        with:
+          name: msix-sideload
+          path: artifacts/
+
+      - name: Download certificate
+        uses: actions/download-artifact@v8
+        with:
+          name: msix-certificate
+          path: artifacts/
+        continue-on-error: true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TermNest v${{ steps.version.outputs.tag_version }}
+          generate_release_notes: true
+          body: |
+            ## Installation (Sideload)
+
+            **Step 1: Trust the signing certificate (one-time setup)**
+
+            Download the `.cer` file from the assets below and run this in an
+            **Admin PowerShell**:
+
+            ```powershell
+            Import-Certificate -FilePath "$HOME\Downloads\TermNest.App_${{ steps.version.outputs.tag_version }}_x64.cer" -CertStoreLocation "Cert:\LocalMachine\TrustedPeople"
+            ```
+
+            **Step 2: Install the app**
+
+            Download the `.msix` file and double-click to install. Find
+            **TermNest** in the Start menu when it's done.
+
+            > The certificate only needs to be trusted once. Future updates can
+            > be installed by just downloading the new `.msix` and double-clicking it.
+
+            **Uninstall**
+
+            ```powershell
+            Get-AppxPackage *TermNest* | Remove-AppxPackage
+            ```
+          files: |
+            artifacts/*
