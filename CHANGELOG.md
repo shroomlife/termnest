@@ -4,6 +4,11 @@ All notable changes to TermNest are documented in this file.
 
 The version format is `MAJOR.MINOR.BUILD.PATCH` to match the MSIX `<Identity Version>` shape. The `PATCH` field is bumped on every change that produces a new MSIX so `Add-AppxPackage` recognises an upgrade.
 
+## [1.0.0.4] - 2026-04-30
+
+### Fixed
+- **Edit Session / New Session dialog now centres horizontally.** The dialog was pinning `ContentDialogMinWidth` / `ContentDialogMaxWidth` as scoped resources *and* setting `MinWidth` / `MaxWidth` on itself, which forces the WinUI 3 ContentDialog template layer to size against the popup root and ignore `HorizontalAlignment = Center`. The width is now constrained on the inner StackPanel only, matching the Settings dialog pattern.
+
 ## [1.0.0.3] - 2026-04-30
 
 ### Fixed

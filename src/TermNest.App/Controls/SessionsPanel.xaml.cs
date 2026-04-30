@@ -26,7 +26,6 @@ public sealed partial class SessionsPanel : UserControl
     public event EventHandler<string>? StatusMessage;
 
     private const double SessionEditorDialogWidth = 900;
-    private const double SessionEditorDialogMaxWidth = 980;
     private const double SessionEditorDialogMaxHeight = 720;
 
     private SessionStore? _store;
@@ -714,10 +713,15 @@ public sealed partial class SessionsPanel : UserControl
             ("Working dir", workingDirectoryBox),
             ("Notes", notesBox));
 
+        // Pin the width on the inner content only — NOT via MinWidth/MaxWidth
+        // on the ContentDialog itself, and NOT via the ContentDialogMinWidth /
+        // ContentDialogMaxWidth scoped resources. Both of those override the
+        // template layer's smart-positioner and break HorizontalAlignment =
+        // Center (the dialog gets glued to the popup-root's left edge).
+        // Letting the dialog size to its content keeps the centering honest.
         StackPanel contentPanel = new()
         {
             Width = SessionEditorDialogWidth - 48,
-            MaxWidth = SessionEditorDialogMaxWidth - 48,
             Spacing = 22,
         };
         contentPanel.Children.Add(topGrid);
@@ -739,13 +743,9 @@ public sealed partial class SessionsPanel : UserControl
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             XamlRoot = XamlRoot,
-            MinWidth = SessionEditorDialogWidth,
-            MaxWidth = SessionEditorDialogMaxWidth,
             HorizontalAlignment = HorizontalAlignment.Center,
             VerticalAlignment = VerticalAlignment.Center,
         };
-        dialog.Resources["ContentDialogMinWidth"] = SessionEditorDialogWidth;
-        dialog.Resources["ContentDialogMaxWidth"] = SessionEditorDialogMaxWidth;
 
         dialog.PrimaryButtonClick += (_, args) =>
         {
