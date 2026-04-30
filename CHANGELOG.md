@@ -4,6 +4,14 @@ All notable changes to TermNest are documented in this file.
 
 The version format is `MAJOR.MINOR.BUILD.PATCH` to match the MSIX `<Identity Version>` shape. The `PATCH` field is bumped on every change that produces a new MSIX so `Add-AppxPackage` recognises an upgrade.
 
+## [1.0.0.5] - 2026-04-30
+
+### Changed
+- **Edit Session and Settings dialogs share one form language now.** Single column, label-above-input rows, section header + 1px divider for visual grouping, optional caption-grey hints under each editor. The two-column "Identity / Connection" grid is gone — it never centred reliably and the right column got truncated at narrow widths. Host and Port stay paired side-by-side because they're typed as one motion; everything else flows full-width.
+- Edit Session dialog inner width tightened to 640 (was 900) so the dialog fits comfortably even on the smaller laptop displays without overflowing.
+- Settings dialog gets two named sections — "External tools" (PuTTY, WinSCP) and "Terminal" (font size) — each with a labelled "Browse…" button (was a `...` glyph) and a hint underneath.
+- Form helpers (`BuildFormSection`, `BuildFormRow`, `BuildHostAndPortRow` in the editor; `BuildSettingsSection`, `BuildPathRow`, `BuildFieldRow` in the settings dialog) factor the layout so future fields can be added by appending one line.
+
 ## [1.0.0.4] - 2026-04-30
 
 ### Fixed

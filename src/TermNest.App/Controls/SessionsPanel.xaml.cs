@@ -25,7 +25,7 @@ public sealed partial class SessionsPanel : UserControl
     /// </summary>
     public event EventHandler<string>? StatusMessage;
 
-    private const double SessionEditorDialogWidth = 900;
+    private const double SessionEditorDialogWidth = 640;
     private const double SessionEditorDialogMaxHeight = 720;
 
     private SessionStore? _store;
@@ -615,25 +615,21 @@ public sealed partial class SessionsPanel : UserControl
         {
             Text = draft.SessionId,
             PlaceholderText = "Folder/SessionName",
-            MinWidth = 280,
         };
         TextBox nameBox = new()
         {
             Text = string.IsNullOrWhiteSpace(draft.SessionName) ? Path.GetFileName(draft.SessionId) : draft.SessionName,
-            PlaceholderText = "Display name",
-            MinWidth = 280,
+            PlaceholderText = "My server",
         };
         ComboBox protocolBox = new()
         {
             ItemsSource = Enum.GetValues<ConnectionProtocol>(),
             SelectedItem = draft.Protocol,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
         };
         TextBox hostBox = new()
         {
             Text = draft.Host,
             PlaceholderText = "host or IP",
-            MinWidth = 280,
         };
         NumberBox portBox = new()
         {
@@ -648,7 +644,6 @@ public sealed partial class SessionsPanel : UserControl
         {
             Text = draft.Username ?? string.Empty,
             PlaceholderText = "user",
-            MinWidth = 280,
         };
         TextBox puttySessionBox = new()
         {
@@ -663,15 +658,15 @@ public sealed partial class SessionsPanel : UserControl
         TextBox workingDirectoryBox = new()
         {
             Text = draft.WorkingDirectory ?? string.Empty,
-            PlaceholderText = "C:\\path\\to\\folder",
+            PlaceholderText = @"C:\path\to\folder",
         };
         TextBox notesBox = new()
         {
             Text = draft.Notes ?? string.Empty,
             AcceptsReturn = true,
             TextWrapping = TextWrapping.Wrap,
-            MinHeight = 118,
-            PlaceholderText = "Notes",
+            MinHeight = 96,
+            PlaceholderText = "Anything you want to remember about this session…",
         };
 
         protocolBox.SelectionChanged += (_, _) =>
@@ -682,50 +677,31 @@ public sealed partial class SessionsPanel : UserControl
             }
         };
 
-        Grid topGrid = new()
-        {
-            ColumnSpacing = 28,
-        };
-        topGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        topGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-        StackPanel identitySection = CreateFormSection(
-            "Identity",
-            ("Session path", sessionIdBox),
-            ("Display name", nameBox),
-            ("Protocol", protocolBox));
-
-        StackPanel connectionSection = CreateFormSection(
-            "Connection",
-            ("Host", hostBox),
-            ("Port", portBox),
-            ("User", usernameBox));
-
-        Grid.SetColumn(identitySection, 0);
-        Grid.SetColumn(connectionSection, 1);
-        topGrid.Children.Add(identitySection);
-        topGrid.Children.Add(connectionSection);
-
-        StackPanel advancedSection = CreateFormSection(
-            "Advanced",
-            ("PuTTY session", puttySessionBox),
-            ("Extra args", extraArgsBox),
-            ("Working dir", workingDirectoryBox),
-            ("Notes", notesBox));
-
-        // Pin the width on the inner content only — NOT via MinWidth/MaxWidth
-        // on the ContentDialog itself, and NOT via the ContentDialogMinWidth /
-        // ContentDialogMaxWidth scoped resources. Both of those override the
-        // template layer's smart-positioner and break HorizontalAlignment =
-        // Center (the dialog gets glued to the popup-root's left edge).
-        // Letting the dialog size to its content keeps the centering honest.
+        // Single-column form for predictable centering and natural responsive
+        // behaviour. The Host+Port pair is the only inline-grouping because
+        // those two fields semantically belong together (and the user types
+        // them as one motion). Everything else stays full-width so labels
+        // never wrap and inputs never argue with the popup root over space.
         StackPanel contentPanel = new()
         {
             Width = SessionEditorDialogWidth - 48,
-            Spacing = 22,
+            Spacing = 24,
         };
-        contentPanel.Children.Add(topGrid);
-        contentPanel.Children.Add(advancedSection);
+
+        contentPanel.Children.Add(BuildFormSection("Identity",
+            BuildFormRow("Session path", sessionIdBox, "Use \"Folder/Name\" to nest the session inside a folder."),
+            BuildFormRow("Display name", nameBox),
+            BuildFormRow("Protocol", protocolBox)));
+
+        contentPanel.Children.Add(BuildFormSection("Connection",
+            BuildHostAndPortRow(hostBox, portBox),
+            BuildFormRow("User", usernameBox)));
+
+        contentPanel.Children.Add(BuildFormSection("Advanced",
+            BuildFormRow("PuTTY session", puttySessionBox),
+            BuildFormRow("Extra arguments", extraArgsBox),
+            BuildFormRow("Working directory", workingDirectoryBox),
+            BuildFormRow("Notes", notesBox)));
 
         ScrollViewer scrollViewer = new()
         {
@@ -881,59 +857,91 @@ public sealed partial class SessionsPanel : UserControl
         return duplicate ? $"A session named \"{normalizedId}\" already exists." : null;
     }
 
-    private static StackPanel CreateFormSection(string title, params (string Label, FrameworkElement Editor)[] rows)
+    /// <summary>
+    /// Single section in a settings-style form: section title, a 1px divider
+    /// underneath, and the supplied rows stacked beneath. Matches the visual
+    /// language used in the app Settings dialog so both dialogs feel like
+    /// the same product.
+    /// </summary>
+    private static StackPanel BuildFormSection(string title, params UIElement[] rows)
     {
-        StackPanel section = new()
-        {
-            Spacing = 10,
-        };
-        section.Children.Add(new TextBlock
+        StackPanel section = new() { Spacing = 14 };
+
+        StackPanel header = new() { Spacing = 6 };
+        header.Children.Add(new TextBlock
         {
             Text = title,
-            FontSize = 14,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
-            Foreground = (Brush)Application.Current.Resources["TextFillColorPrimaryBrush"],
+            Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
         });
-
-        Grid form = new()
+        header.Children.Add(new Microsoft.UI.Xaml.Shapes.Rectangle
         {
-            ColumnSpacing = 12,
-            RowSpacing = 10,
-        };
-        form.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
-        form.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+            Height = 1,
+            Fill = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"],
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        });
+        section.Children.Add(header);
 
-        foreach ((string label, FrameworkElement editor) in rows)
+        StackPanel body = new() { Spacing = 16 };
+        foreach (UIElement row in rows)
         {
-            AddFormRow(form, label, editor);
+            body.Children.Add(row);
         }
+        section.Children.Add(body);
 
-        section.Children.Add(form);
         return section;
     }
 
-    private static void AddFormRow(Grid form, string label, FrameworkElement editor)
+    /// <summary>
+    /// Form row with the label above the editor (vertical stack). This
+    /// pattern centres reliably on the WinUI 3 ContentDialog template, never
+    /// truncates a label when the dialog is constrained, and removes the
+    /// fragile two-column "label-left / editor-right" layout that broke
+    /// horizontal alignment in earlier revisions.
+    /// </summary>
+    private static StackPanel BuildFormRow(string label, FrameworkElement editor, string? hint = null)
     {
-        int row = form.RowDefinitions.Count;
-        form.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        bool multiline = editor is TextBox { AcceptsReturn: true };
-
-        TextBlock labelBlock = new()
+        StackPanel row = new() { Spacing = 6 };
+        row.Children.Add(new TextBlock
         {
             Text = label,
-            VerticalAlignment = multiline ? VerticalAlignment.Top : VerticalAlignment.Center,
-            Margin = multiline ? new Thickness(0, 7, 0, 0) : new Thickness(0),
+            Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
             Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-        };
-
+        });
         editor.HorizontalAlignment = HorizontalAlignment.Stretch;
+        row.Children.Add(editor);
+        if (!string.IsNullOrWhiteSpace(hint))
+        {
+            row.Children.Add(new TextBlock
+            {
+                Text = hint,
+                Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+                Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+        return row;
+    }
 
-        Grid.SetRow(labelBlock, row);
-        Grid.SetColumn(labelBlock, 0);
-        Grid.SetRow(editor, row);
-        Grid.SetColumn(editor, 1);
-        form.Children.Add(labelBlock);
-        form.Children.Add(editor);
+    /// <summary>
+    /// Inline pair: Host (stretches) + Port (compact, fixed-ish width).
+    /// Two semantically related fields that the user types in one motion —
+    /// keeping them side-by-side avoids unnecessary vertical sprawl while
+    /// the rest of the form stays single-column.
+    /// </summary>
+    private static Grid BuildHostAndPortRow(FrameworkElement hostEditor, FrameworkElement portEditor)
+    {
+        Grid row = new() { ColumnSpacing = 12 };
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
+
+        StackPanel hostCell = BuildFormRow("Host", hostEditor);
+        StackPanel portCell = BuildFormRow("Port", portEditor);
+
+        Grid.SetColumn(hostCell, 0);
+        Grid.SetColumn(portCell, 1);
+        row.Children.Add(hostCell);
+        row.Children.Add(portCell);
+        return row;
     }
 
     private static SessionData CloneSession(SessionData source) => new()

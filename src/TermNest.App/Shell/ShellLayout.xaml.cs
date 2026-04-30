@@ -328,19 +328,19 @@ public sealed partial class ShellLayout : UserControl
         }
     }
 
+    private const double SettingsDialogWidth = 560;
+
     private async Task ShowSettingsDialogAsync()
     {
         TextBox puttyBox = new()
         {
             Text = ViewModel.PuttyExePath,
             PlaceholderText = @"C:\Program Files\PuTTY\putty.exe",
-            HorizontalAlignment = HorizontalAlignment.Stretch,
         };
         TextBox winScpBox = new()
         {
             Text = ViewModel.WinScpExePath,
             PlaceholderText = @"C:\Program Files (x86)\WinSCP\WinSCP.exe",
-            HorizontalAlignment = HorizontalAlignment.Stretch,
         };
         NumberBox fontSizeBox = new()
         {
@@ -350,17 +350,16 @@ public sealed partial class ShellLayout : UserControl
             SmallChange = 1,
             LargeChange = 2,
             SpinButtonPlacementMode = NumberBoxSpinButtonPlacementMode.Inline,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
         };
 
-        Button browsePutty = CreateBrowseButton("Browse for putty.exe");
+        Button browsePutty = CreateBrowseButton();
         browsePutty.Click += async (_, _) =>
         {
             string? picked = await PickExecutablePathAsync(
                 "Select putty.exe", puttyBox.Text, "putty.exe").ConfigureAwait(true);
             if (picked != null) puttyBox.Text = picked;
         };
-        Button browseWinScp = CreateBrowseButton("Browse for winscp.exe");
+        Button browseWinScp = CreateBrowseButton();
         browseWinScp.Click += async (_, _) =>
         {
             string? picked = await PickExecutablePathAsync(
@@ -368,13 +367,29 @@ public sealed partial class ShellLayout : UserControl
             if (picked != null) winScpBox.Text = picked;
         };
 
-        StackPanel content = new() { Spacing = 22, Width = 520 };
-        content.Children.Add(CreatePathRow("PuTTY executable", puttyBox, browsePutty));
-        content.Children.Add(CreatePathRow("WinSCP executable", winScpBox, browseWinScp));
-        content.Children.Add(CreateFieldSection(
-            "Terminal font size",
-            "Used in every newly opened terminal tab and applied immediately to open tabs.",
-            fontSizeBox));
+        StackPanel content = new()
+        {
+            Spacing = 24,
+            Width = SettingsDialogWidth - 48,
+        };
+
+        content.Children.Add(BuildSettingsSection("External tools",
+            BuildPathRow(
+                "PuTTY executable",
+                "Used when opening sessions whose protocol still requires PuTTY.",
+                puttyBox,
+                browsePutty),
+            BuildPathRow(
+                "WinSCP executable",
+                "Launched from the WinSCP action on each saved session row.",
+                winScpBox,
+                browseWinScp)));
+
+        content.Children.Add(BuildSettingsSection("Terminal",
+            BuildFieldRow(
+                "Font size",
+                "Applies immediately to open tabs and to every newly opened terminal.",
+                fontSizeBox)));
 
         ContentDialog dialog = new()
         {
@@ -411,57 +426,114 @@ public sealed partial class ShellLayout : UserControl
         SetStatus("Settings saved.");
     }
 
-    private static Button CreateBrowseButton(string tooltip) => new()
+    private static Button CreateBrowseButton()
     {
-        Content = "...",
-        Width = 44,
-        MinWidth = 44,
-        Padding = new Thickness(0),
-        VerticalAlignment = VerticalAlignment.Stretch,
-    };
-
-    private static StackPanel CreatePathRow(string label, TextBox editor, Button browse)
-    {
-        ToolTipService.SetToolTip(browse, browse.Content);
-
-        Grid row = new() { ColumnSpacing = 8 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        Grid.SetColumn(editor, 0);
-        Grid.SetColumn(browse, 1);
-        row.Children.Add(editor);
-        row.Children.Add(browse);
-
-        StackPanel section = new() { Spacing = 6 };
-        section.Children.Add(new TextBlock
+        Button button = new()
         {
-            Text = label,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Content = "Browse…",
+            Padding = new Thickness(14, 0, 14, 0),
+            VerticalAlignment = VerticalAlignment.Stretch,
+        };
+        ToolTipService.SetToolTip(button, "Browse for an executable");
+        return button;
+    }
+
+    /// <summary>
+    /// Section block: bold title + 1px divider + child rows. Mirrors the
+    /// section pattern used in the Edit-Session dialog so both dialogs share
+    /// the same form language.
+    /// </summary>
+    private static StackPanel BuildSettingsSection(string title, params UIElement[] rows)
+    {
+        StackPanel section = new() { Spacing = 14 };
+
+        StackPanel header = new() { Spacing = 6 };
+        header.Children.Add(new TextBlock
+        {
+            Text = title,
+            Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
         });
-        section.Children.Add(row);
+        header.Children.Add(new Microsoft.UI.Xaml.Shapes.Rectangle
+        {
+            Height = 1,
+            Fill = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"],
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+        });
+        section.Children.Add(header);
+
+        StackPanel body = new() { Spacing = 16 };
+        foreach (UIElement row in rows)
+        {
+            body.Children.Add(row);
+        }
+        section.Children.Add(body);
         return section;
     }
 
-    private static StackPanel CreateFieldSection(string label, string hint, FrameworkElement editor)
+    /// <summary>
+    /// Settings row with label-on-top + a path TextBox and an inline Browse
+    /// button to the right, plus an optional caption underneath. Matches
+    /// `BuildFieldRow` visually but is specialised for "executable path"
+    /// rows where users either type or pick.
+    /// </summary>
+    private static StackPanel BuildPathRow(string label, string? hint, TextBox editor, Button browse)
     {
-        StackPanel section = new() { Spacing = 6 };
-        section.Children.Add(new TextBlock
+        StackPanel row = new() { Spacing = 6 };
+        row.Children.Add(new TextBlock
         {
             Text = label,
-            FontWeight = Microsoft.UI.Text.FontWeights.SemiBold,
+            Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
         });
-        section.Children.Add(editor);
+
+        Grid editorRow = new() { ColumnSpacing = 8 };
+        editorRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        editorRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        editor.HorizontalAlignment = HorizontalAlignment.Stretch;
+        Grid.SetColumn(editor, 0);
+        Grid.SetColumn(browse, 1);
+        editorRow.Children.Add(editor);
+        editorRow.Children.Add(browse);
+        row.Children.Add(editorRow);
+
         if (!string.IsNullOrWhiteSpace(hint))
         {
-            section.Children.Add(new TextBlock
+            row.Children.Add(new TextBlock
             {
                 Text = hint,
                 Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
-                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
                 TextWrapping = TextWrapping.Wrap,
             });
         }
-        return section;
+        return row;
+    }
+
+    /// <summary>
+    /// Plain settings row: label-on-top + editor + optional caption.
+    /// </summary>
+    private static StackPanel BuildFieldRow(string label, string? hint, FrameworkElement editor)
+    {
+        StackPanel row = new() { Spacing = 6 };
+        row.Children.Add(new TextBlock
+        {
+            Text = label,
+            Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+            Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
+        });
+        editor.HorizontalAlignment = HorizontalAlignment.Stretch;
+        row.Children.Add(editor);
+        if (!string.IsNullOrWhiteSpace(hint))
+        {
+            row.Children.Add(new TextBlock
+            {
+                Text = hint,
+                Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
+                Foreground = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+        return row;
     }
 
     private Task<string?> PickExecutablePathAsync(string title, string currentPath, string fallbackFileName)
