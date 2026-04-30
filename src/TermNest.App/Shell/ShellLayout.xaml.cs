@@ -49,11 +49,21 @@ public sealed partial class ShellLayout : UserControl
     {
         InitializeComponent();
         Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
 
         // Permanent column-resize cursor on the splitter handle. Setting it
         // once here avoids per-pointer toggling and keeps the cursor stable
         // mid-drag even if the pointer briefly leaves the 6px hit area.
         SideRailSplitter.HandleCursor = InputSystemCursor.Create(InputSystemCursorShape.SizeWestEast);
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        // Stop the status auto-clear timer before the dispatcher tears down.
+        // A late tick on a destroyed XAML tree wouldn't crash (StatusMessage
+        // is just a property), but stopping it eagerly is the conservative
+        // shutdown order.
+        _statusClearTimer?.Stop();
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)

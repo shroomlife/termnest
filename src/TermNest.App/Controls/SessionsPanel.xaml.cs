@@ -178,17 +178,14 @@ public sealed partial class SessionsPanel : UserControl
 
     private void OnTreeItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
     {
-        // ItemInvoked fires on double-tap / Enter. Single-tap copies the host
-        // via OnTreeItemTapped; double-tap is reserved as a no-op for sessions
-        // so the editor only opens through the explicit Edit button.
-        DebugLog.Write("SessionsPanel", $"ItemInvoked invokedItem={args.InvokedItem?.GetType().Name} (no-op)");
-    }
-
-    private void OnTreeSelectionChanged(TreeView sender, TreeViewSelectionChangedEventArgs args)
-    {
-        object? selected = args.AddedItems.LastOrDefault();
-        DebugLog.Write("SessionsPanel", $"SelectionChanged selected={selected?.GetType().Name ?? "null"}");
-        TryInvoke(selected);
+        // ItemInvoked fires on double-tap / Enter / Space. Single-tap is
+        // already handled by OnTreeItemTapped (copy host) and the inline
+        // Connect button, so this path's job is keyboard activation:
+        // pressing Enter on a focused leaf should open the session, never
+        // the editor (the editor only opens via the explicit Edit button or
+        // context menu).
+        DebugLog.Write("SessionsPanel", $"ItemInvoked invokedItem={args.InvokedItem?.GetType().Name}");
+        TryInvoke(args.InvokedItem);
     }
 
     private void OnTreeExpanding(TreeView sender, TreeViewExpandingEventArgs args)

@@ -66,14 +66,16 @@ A single fixed XAML grid hosts everything:
 
 `TerminalView` (control) is the sole adapter between two **backend session classes** in `TermNest.Core.Sessions` and the `xterm.js` page in `Assets/Terminal/index.html`:
 
-- `SshTerminalSession` — SSH.NET-driven, password auth only in 1.0. Pumps `ShellStream` bytes through a UTF-8 decoder onto `DataReceived`. Mid-stream PTY resize is a no-op because SSH.NET's public `ShellStream` API doesn't expose `SendWindowChangeRequest` — the shell opens at the initial size and modern servers re-detect via cooperative SIGWINCH heuristics.
-- `ConsoleTerminalSession` — ConPTY-backed local shells (cmd, PowerShell, OpenSSH `ssh.exe`).
+- `ConsoleTerminalSession` — **the active path for every protocol in 1.x**, including SSH. ConPTY-backed; SSH connects shell out to OpenSSH `ssh.exe` and let it handle authentication (password / key / agent), host-key prompts, and known-hosts persistence (`~/.ssh/known_hosts`). Local cmd / PowerShell sessions also flow through here.
+- `SshTerminalSession` — SSH.NET-driven, app-level SSH path. **Currently dormant** — `SessionTabsControl.OpenSessionAsync` routes every SSH protocol to `OpenConsoleTabAsync`, so this class plus `KnownHostsStore` and `HostKeyPromptDelegate` are reserved for a future "TermNest does the SSH" mode where the connect / auth / fingerprint UI lives inside the app instead of inside ssh.exe's terminal output. Pumps `ShellStream` bytes through a UTF-8 decoder onto `DataReceived`. Don't delete it: the wiring (`ShellLayout.PromptForHostKeyAsync`, `SessionTabs.HostKeyStore`/`HostKeyPrompt`) and the on-disk `known_hosts.json` schema are intentionally pre-laid for that switch-over.
 
 The WebView2 page is mapped via `SetVirtualHostNameToFolderMapping("termnest.local", ...)` so it loads from a real `https://termnest.local/index.html` origin (CSP `'self'`, fetch, workers all behave). The page communicates via JSON `postMessage`s (`ready` / `data` / `resize` / `painted` / `title` / `log`); the C# side dispatches via `OnWebMessageReceived` and writes back through `host_write(...)` JS calls. Bundled terminal assets live under `src/TermNest.App/Assets/Terminal/` and are copied via `<Content Include="Assets\Terminal\**\*" />`.
 
 ### Host-key verification (security-critical)
 
-SSH connects MUST go through `KnownHostsStore` + a `HostKeyPromptDelegate`. The contract:
+**Today (1.x):** Host-key checking is delegated to OpenSSH `ssh.exe` because every SSH connect goes through `ConsoleTerminalSession`. The user sees the standard `ssh-keygen`-style fingerprint prompt printed inside the terminal pane and types `yes` / `no`; the accepted fingerprint persists in `%USERPROFILE%\.ssh\known_hosts` (OpenSSH's file, not ours). MITM protection is therefore as strong as OpenSSH's default — `StrictHostKeyChecking ask` policy.
+
+**Reserved for future:** when the SSH.NET path is re-enabled, the contract is enforced by `SshTerminalSession` + `KnownHostsStore` + `HostKeyPromptDelegate`:
 
 1. First connect to a host → prompt user with SHA-256 fingerprint, persist on accept.
 2. Subsequent match → silent accept.

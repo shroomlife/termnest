@@ -207,6 +207,15 @@ public sealed class ConsoleTerminalSession : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// True when the read loop hit a clean EOF on stdout — i.e. the child
+    /// process closed its end naturally (user typed <c>exit</c>, ssh.exe
+    /// finished gracefully). Distinguishes that case from a real error in
+    /// the read pipeline so the UI doesn't shout "Connection lost" on a
+    /// normal shell exit.
+    /// </summary>
+    private bool _sawCleanEof;
+
     private async Task ReadLoopAsync(CancellationToken cancellationToken)
     {
         if (_output == null) return;
@@ -221,6 +230,7 @@ public sealed class ConsoleTerminalSession : IAsyncDisposable
                 int read = await _output.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
                 if (read == 0)
                 {
+                    _sawCleanEof = true;
                     break;
                 }
 
@@ -246,7 +256,12 @@ public sealed class ConsoleTerminalSession : IAsyncDisposable
             {
                 DataReceived?.Invoke(this, new string(chars, 0, charCount));
             }
-            RaiseClosed(!_isClosing);
+            // "Unexpected" should mean the read pipeline broke before EOF.
+            // A clean EOF (user typed `exit`, ssh.exe finished) or an
+            // explicit close are both expected shutdowns — the UI shouldn't
+            // surface "Connection lost" in those cases.
+            bool unexpected = !_isClosing && !_sawCleanEof;
+            RaiseClosed(unexpected);
         }
     }
 

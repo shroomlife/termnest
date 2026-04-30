@@ -294,6 +294,14 @@ public sealed partial class TerminalView : UserControl
             ShowStatus("Start failed", ex.Message, spinner: false);
             _connectTcs?.TrySetException(ex);
         }
+        finally
+        {
+            // Always clear the in-progress flag so a retry on the same view
+            // (post-failure) isn't silently dropped. Today the host always
+            // discards the view after failure, but defending here avoids a
+            // class of regressions if the retry path changes later.
+            _startInProgress = false;
+        }
     }
 
     private async Task StartSshAsync(SessionData session)
@@ -501,6 +509,18 @@ public sealed partial class TerminalView : UserControl
 
     public async Task CloseAsync()
     {
+        // Detach the WebView2 message handler before tearing down the
+        // backend. A late posted message from the page after we've disposed
+        // _ssh/_console would otherwise re-enter OnWebMessageReceived with a
+        // dangling backend reference. The WebView2 control's own lifetime is
+        // tied to the tab, so the unsubscription is symmetric with the Loaded
+        // subscription in OnLoaded.
+        if (WebView.CoreWebView2 != null)
+        {
+            try { WebView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived; }
+            catch (Exception ex) { DebugLog.Write("TerminalView", $"WebMessage unsubscribe failed: {ex.Message}"); }
+        }
+
         if (_ssh != null)
         {
             await _ssh.DisposeAsync().ConfigureAwait(true);

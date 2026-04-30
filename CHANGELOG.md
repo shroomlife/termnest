@@ -4,6 +4,22 @@ All notable changes to TermNest are documented in this file.
 
 The version format is `MAJOR.MINOR.BUILD.PATCH` to match the MSIX `<Identity Version>` shape. The `PATCH` field is bumped on every change that produces a new MSIX so `Add-AppxPackage` recognises an upgrade.
 
+## [1.0.0.3] - 2026-04-30
+
+### Fixed
+- **Keyboard activation in the session tree** — pressing Enter (or Space) on a focused session now opens it. The `TreeView.ItemInvoked` handler was a no-op since 1.0.0.0; sessions could only be opened by mouse before.
+- **Clean shell exit no longer reports as "Connection lost"** — `ConsoleTerminalSession` distinguishes a natural EOF (user typed `exit`, ssh.exe finished) from a real read-pipeline failure. Only the latter renders the disconnect overlay now.
+- **`TerminalView` start-state lock-up** — `_startInProgress` is now reset in a `finally` block, so a retry on the same view (post-failure) can never silently no-op.
+
+### Changed
+- WebView2 `WebMessageReceived` is now unsubscribed in `TerminalView.CloseAsync` for symmetric lifetime with the `OnLoaded` subscription.
+- `ShellLayout` stops the status auto-clear timer on `Unloaded` so a stray late tick can never run on a torn-down dispatcher.
+- Documentation alignment: CLAUDE.md and README now spell out that **SSH currently flows through OpenSSH `ssh.exe` in a ConPTY**, with `~/.ssh/known_hosts` carrying the host-key pinning. The `SshTerminalSession` + `KnownHostsStore` path is reserved for the future "app-level SSH" mode and explicitly marked dormant.
+
+### Pipeline
+- Removed `dotnet-quality: "preview"` from the release workflow — .NET 10 is GA.
+- The signing PFX is removed from the runner's filesystem after build (`if: always()`), narrowing the leak window even on ephemeral runners.
+
 ## [1.0.0.2] - 2026-04-30
 
 ### Changed

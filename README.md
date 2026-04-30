@@ -42,8 +42,9 @@ small WinUI 3 desktop app that does one thing well.
   folders before you fill them.
 - 🪶 **xterm.js terminal** — proper ANSI / 256-color rendering, real
   copy & paste, clean fonts.
-- 🔐 **SSH.NET transport** — direct SSH protocol, password auth in 1.0,
-  host-key prompt on first connect, hard-refusal on fingerprint mismatch.
+- 🔐 **OpenSSH transport** — `ssh.exe` runs inside a ConPTY tab, so auth
+  (password / key / agent) and host-key prompts work exactly like in any
+  other terminal, with `~/.ssh/known_hosts` doing the pinning.
 - 🖱️ **One-click row actions** — single-click on a session copies the
   host to your clipboard. Hover reveals *connect*, *open in WinSCP*,
   *edit*. The row never opens a dialog by accident.
@@ -190,7 +191,9 @@ host.
 
 The 1.0 cut focuses on the SSH happy path. Tracked for later:
 
-- [ ] Public-key SSH auth (Phase 2)
+- [ ] App-level SSH path (SSH.NET transport, in-app fingerprint prompt
+      via `KnownHostsStore`) — wiring is in place, currently dormant
+      while `ssh.exe` carries the connects.
 - [ ] Re-introducing a focused ad-hoc Quick-Connect dialog
 - [ ] Detachable docks / multi-window
 - [ ] SFTP browser tab
