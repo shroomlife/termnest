@@ -4,6 +4,11 @@ All notable changes to TermNest are documented in this file.
 
 The version format is `MAJOR.MINOR.BUILD.PATCH` to match the MSIX `<Identity Version>` shape. The `PATCH` field is bumped on every change that produces a new MSIX so `Add-AppxPackage` recognises an upgrade.
 
+## [1.0.0.9] - 2026-04-30
+
+### Fixed
+- **Edit Session and Settings dialogs scroll properly when content overflows.** v1.0.0.6 dropped the inner `ScrollViewer` because it nested inside the `ContentDialog` template's own scroller and produced a permanent gutter; the trade-off was that tall forms got clipped silently. Re-added an inner `ScrollViewer` with the modern fluent overlay scrollbar (`ScrollBarVisibility.Auto`) that auto-hides when content fits, and capped `ContentDialogMaxHeight` so the outer template scroller stays out of the way (only the inner one ever shows). Mouse-wheel and trackpad gestures both work; the scrollbar appears only when needed and doesn't carve a gutter through the form.
+
 ## [1.0.0.8] - 2026-04-30
 
 ### Fixed

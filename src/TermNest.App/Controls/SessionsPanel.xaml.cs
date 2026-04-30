@@ -780,13 +780,26 @@ public sealed partial class SessionsPanel : UserControl
         UpdateProtocolDependentVisibility();
         protocolBox.SelectionChanged += (_, _) => UpdateProtocolDependentVisibility();
 
-        // No inner ScrollViewer — the ContentDialog template wraps its
-        // content in a fluent-overlay scroller that auto-hides when the form
-        // fits and only appears when scrolling is actually needed.
+        // The dialog template's outer ScrollViewer is the one we leave to do
+        // the work — but we used to nest our own ScrollViewer inside, which
+        // produced a permanently-visible gutter (two scrollers, both with a
+        // gutter style). Instead: wrap the form in a single ScrollViewer
+        // with the fluent overlay indicators (auto-hide) and disable the
+        // template's outer scroller via ContentDialogContentScrollViewerStyle
+        // so only one scrollbar exists, and only when the content overflows.
+        ScrollViewer formScroller = new()
+        {
+            Content = contentPanel,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalScrollMode = ScrollMode.Disabled,
+            Padding = new Thickness(0, 0, 4, 0),
+        };
+
         ContentDialog dialog = new()
         {
             Title = isNew ? "New session" : "Edit session",
-            Content = contentPanel,
+            Content = formScroller,
             PrimaryButtonText = "Save",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
@@ -801,6 +814,11 @@ public sealed partial class SessionsPanel : UserControl
         // so the popup root keeps its smart-positioning (overriding both
         // MinWidth and MaxWidth was what broke horizontal centering before).
         dialog.Resources["ContentDialogMaxWidth"] = (double)SessionEditorDialogWidth + 48;
+        // Cap the dialog height so the outer template enforces a real upper
+        // bound — without this the template's inner scroller doesn't engage
+        // and the SettingsCards at the bottom of the form get clipped instead
+        // of scrolled to.
+        dialog.Resources["ContentDialogMaxHeight"] = 760.0;
 
         dialog.PrimaryButtonClick += (_, args) =>
         {

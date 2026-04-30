@@ -398,10 +398,19 @@ public sealed partial class ShellLayout : UserControl
             ContentAlignment = ContentAlignment.Right,
         });
 
+        ScrollViewer formScroller = new()
+        {
+            Content = content,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            HorizontalScrollMode = ScrollMode.Disabled,
+            Padding = new Thickness(0, 0, 4, 0),
+        };
+
         ContentDialog dialog = new()
         {
             Title = "Settings",
-            Content = content,
+            Content = formScroller,
             PrimaryButtonText = "Save",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
@@ -415,6 +424,7 @@ public sealed partial class ShellLayout : UserControl
         // clipping. Only MaxWidth — leaving MinWidth at the default keeps the
         // popup root's centering logic happy.
         dialog.Resources["ContentDialogMaxWidth"] = (double)SettingsDialogWidth + 48;
+        dialog.Resources["ContentDialogMaxHeight"] = 720.0;
 
         ContentDialogResult result = await dialog.ShowAsync();
         if (result != ContentDialogResult.Primary) return;

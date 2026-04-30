@@ -8,7 +8,7 @@
   <Identity
     Name="dev.shroomlife.TermNest"
     Publisher="CN=ShroomlifeDev"
-    Version="1.0.0.8" />
+    Version="1.0.0.9" />
 
   <Properties>
     <DisplayName>TermNest</DisplayName>
