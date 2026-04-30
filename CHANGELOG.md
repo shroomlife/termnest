@@ -4,6 +4,12 @@ All notable changes to TermNest are documented in this file.
 
 The version format is `MAJOR.MINOR.BUILD.PATCH` to match the MSIX `<Identity Version>` shape. The `PATCH` field is bumped on every change that produces a new MSIX so `Add-AppxPackage` recognises an upgrade.
 
+## [1.0.0.6] - 2026-04-30
+
+### Fixed
+- **Edit Session dialog showed a permanent scrollbar gutter** even on tall windows where the form fit fully. The dialog content was nested inside a custom `ScrollViewer` *and* the `ContentDialog` template's own scroll wrapper — the template's outer gutter rendered constantly. Removed the inner `ScrollViewer`; the dialog now uses the template's modern fluent overlay scrollbar that auto-hides when no scrolling is needed.
+- **Port input was cramped** at 140 px (the inline spin buttons ate most of the slot). Bumped the Port column to 180 px so the value plus arrows have proper breathing room.
+
 ## [1.0.0.5] - 2026-04-30
 
 ### Changed

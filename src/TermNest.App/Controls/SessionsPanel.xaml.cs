@@ -26,7 +26,6 @@ public sealed partial class SessionsPanel : UserControl
     public event EventHandler<string>? StatusMessage;
 
     private const double SessionEditorDialogWidth = 640;
-    private const double SessionEditorDialogMaxHeight = 720;
 
     private SessionStore? _store;
     private List<SessionData> _allSessions = new();
@@ -703,18 +702,15 @@ public sealed partial class SessionsPanel : UserControl
             BuildFormRow("Working directory", workingDirectoryBox),
             BuildFormRow("Notes", notesBox)));
 
-        ScrollViewer scrollViewer = new()
-        {
-            Content = contentPanel,
-            MaxHeight = SessionEditorDialogMaxHeight,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-        };
-
+        // No inner ScrollViewer here. The ContentDialog template already
+        // wraps its content in one — nesting a second ScrollViewer made the
+        // outer template-level gutter render permanently, even on dialogs
+        // that didn't need to scroll. Letting the template handle overflow
+        // gives the modern fluent overlay scrollbar that auto-hides.
         ContentDialog dialog = new()
         {
             Title = isNew ? "New session" : "Edit session",
-            Content = scrollViewer,
+            Content = contentPanel,
             PrimaryButtonText = "Save",
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
@@ -930,9 +926,11 @@ public sealed partial class SessionsPanel : UserControl
     /// </summary>
     private static Grid BuildHostAndPortRow(FrameworkElement hostEditor, FrameworkElement portEditor)
     {
+        // Host stretches; Port is fixed-width but generous enough to hold
+        // 5 digits + the inline spin buttons without crowding the value.
         Grid row = new() { ColumnSpacing = 12 };
         row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
+        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
 
         StackPanel hostCell = BuildFormRow("Host", hostEditor);
         StackPanel portCell = BuildFormRow("Port", portEditor);
