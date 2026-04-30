@@ -1,3 +1,4 @@
+using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Input;
@@ -25,7 +26,8 @@ public sealed partial class SessionsPanel : UserControl
     /// </summary>
     public event EventHandler<string>? StatusMessage;
 
-    private const double SessionEditorDialogWidth = 640;
+    private const double SessionEditorDialogWidth = 760;
+    private const string NoFolderLabel = "(no folder)";
 
     private SessionStore? _store;
     private List<SessionData> _allSessions = new();
@@ -610,21 +612,34 @@ public sealed partial class SessionsPanel : UserControl
         string originalSessionId = session.SessionId;
         SessionData draft = CloneSession(session);
 
-        TextBox sessionIdBox = new()
-        {
-            Text = draft.SessionId,
-            PlaceholderText = "Folder/SessionName",
-        };
+        // Editors. Each is wrapped in a SettingsCard below; all measurements
+        // (header, description, hover/border) come from the toolkit.
         TextBox nameBox = new()
         {
             Text = string.IsNullOrWhiteSpace(draft.SessionName) ? Path.GetFileName(draft.SessionId) : draft.SessionName,
             PlaceholderText = "My server",
+            MinWidth = 280,
         };
+
+        // Folder picker: existing folders only, plus a "(no folder)" sentinel.
+        // To create a new folder the user uses the dedicated New-Folder button
+        // in the side rail — keeps this dialog focused on session fields.
+        ComboBox folderBox = new()
+        {
+            ItemsSource = BuildFolderOptions(),
+            MinWidth = 280,
+        };
+        string currentFolder = string.IsNullOrEmpty(draft.FolderPath) ? NoFolderLabel : draft.FolderPath;
+        folderBox.SelectedItem = ((IList<string>)folderBox.ItemsSource).FirstOrDefault(
+            f => string.Equals(f, currentFolder, StringComparison.OrdinalIgnoreCase)) ?? NoFolderLabel;
+
         ComboBox protocolBox = new()
         {
             ItemsSource = Enum.GetValues<ConnectionProtocol>(),
             SelectedItem = draft.Protocol,
+            MinWidth = 200,
         };
+
         TextBox hostBox = new()
         {
             Text = draft.Host,
@@ -647,17 +662,20 @@ public sealed partial class SessionsPanel : UserControl
         TextBox puttySessionBox = new()
         {
             Text = draft.PuttySession ?? string.Empty,
-            PlaceholderText = "PuTTY saved session",
+            PlaceholderText = "Default Settings",
+            MinWidth = 320,
         };
         TextBox extraArgsBox = new()
         {
             Text = draft.ExtraArgs ?? string.Empty,
             PlaceholderText = "-L 8080:localhost:80",
+            MinWidth = 320,
         };
         TextBox workingDirectoryBox = new()
         {
             Text = draft.WorkingDirectory ?? string.Empty,
             PlaceholderText = @"C:\path\to\folder",
+            MinWidth = 320,
         };
         TextBox notesBox = new()
         {
@@ -676,37 +694,95 @@ public sealed partial class SessionsPanel : UserControl
             }
         };
 
-        // Single-column form for predictable centering and natural responsive
-        // behaviour. The Host+Port pair is the only inline-grouping because
-        // those two fields semantically belong together (and the user types
-        // them as one motion). Everything else stays full-width so labels
-        // never wrap and inputs never argue with the popup root over space.
+        // Cards. Keep references to the section blocks so the protocol
+        // selector can hide the ones that don't apply (e.g. Working dir is
+        // local-shell-only, PuTTY saved session is non-SSH only).
+        SettingsCard nameCard = MakeCard("Display name",
+            "The label shown in the session tree and tab strip.",
+            "", nameBox);
+        SettingsCard folderCard = MakeCard("Folder",
+            "Group this session under one of your existing folders. Use the side-rail \"New folder\" button to add more.",
+            "", folderBox);
+        SettingsCard protocolCard = MakeCard("Protocol",
+            "How TermNest connects: SSH uses OpenSSH; Telnet/RDP/VNC route through PuTTY.",
+            "", protocolBox);
+
+        // Connection card hosts Host+Port+User in a single horizontal row —
+        // they're typed in one motion (think `user@host:port`) and pairing
+        // them visually shortens the form.
+        Grid hostPortUserRow = new() { ColumnSpacing = 12 };
+        hostPortUserRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        hostPortUserRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(140) });
+        hostPortUserRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(200) });
+        hostPortUserRow.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        hostPortUserRow.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        AddLabeledCell(hostPortUserRow, 0, "Host", hostBox);
+        AddLabeledCell(hostPortUserRow, 1, "Port", portBox);
+        AddLabeledCell(hostPortUserRow, 2, "User", usernameBox);
+        SettingsCard connectionCard = MakeCard("Endpoint",
+            "Hostname, port and login user. SSH defaults to port 22; PuTTY-routed protocols default to their own well-known ports.",
+            "", hostPortUserRow, contentAlignment: ContentAlignment.Vertical);
+
+        SettingsCard extraArgsCard = MakeCard("Extra arguments",
+            "Passed verbatim to the underlying client. Useful for SSH tunnels (`-L 8080:localhost:80`) or `-i path\\to\\key`.",
+            "", extraArgsBox);
+        SettingsCard puttySessionCard = MakeCard("Saved PuTTY session",
+            "Reuse colour, font and keep-alive settings from a saved PuTTY session.",
+            "", puttySessionBox);
+        SettingsCard workingDirCard = MakeCard("Working directory",
+            "Initial directory for cmd / PowerShell tabs.",
+            "", workingDirectoryBox);
+        SettingsCard notesCard = MakeCard("Notes",
+            "Free-form reminder text — keep credentials out of here.",
+            "", notesBox, contentAlignment: ContentAlignment.Vertical);
+
+        // Section: General — always visible.
+        StackPanel generalSection = BuildSectionStack("General", nameCard, folderCard, protocolCard);
+
+        // Section: Connection — host-based protocols only.
+        StackPanel connectionSection = BuildSectionStack("Connection", connectionCard);
+
+        // Section: Options — fields whose presence depends on the protocol.
+        StackPanel optionsSection = BuildSectionStack("Options",
+            extraArgsCard, puttySessionCard, workingDirCard);
+
+        // Section: Notes — always visible.
+        StackPanel notesSection = BuildSectionStack("Notes", notesCard);
+
         StackPanel contentPanel = new()
         {
             Width = SessionEditorDialogWidth - 48,
-            Spacing = 24,
+            Spacing = 28,
         };
+        contentPanel.Children.Add(generalSection);
+        contentPanel.Children.Add(connectionSection);
+        contentPanel.Children.Add(optionsSection);
+        contentPanel.Children.Add(notesSection);
 
-        contentPanel.Children.Add(BuildFormSection("Identity",
-            BuildFormRow("Session path", sessionIdBox, "Use \"Folder/Name\" to nest the session inside a folder."),
-            BuildFormRow("Display name", nameBox),
-            BuildFormRow("Protocol", protocolBox)));
+        // Reflect the current protocol in card visibility, and keep doing so
+        // whenever the user picks a different protocol. The dialog stays
+        // honest — only fields that actually apply to the selected protocol
+        // are rendered.
+        void UpdateProtocolDependentVisibility()
+        {
+            ConnectionProtocol p = protocolBox.SelectedItem is ConnectionProtocol parsed ? parsed : ConnectionProtocol.SSH;
+            bool hostBased = RequiresHost(p);
+            bool puttyRouted = IsPuttyRouted(p);
+            bool localShell = IsLocalShell(p);
 
-        contentPanel.Children.Add(BuildFormSection("Connection",
-            BuildHostAndPortRow(hostBox, portBox),
-            BuildFormRow("User", usernameBox)));
+            connectionSection.Visibility = hostBased ? Visibility.Visible : Visibility.Collapsed;
+            extraArgsCard.Visibility = hostBased ? Visibility.Visible : Visibility.Collapsed;
+            puttySessionCard.Visibility = puttyRouted ? Visibility.Visible : Visibility.Collapsed;
+            workingDirCard.Visibility = localShell ? Visibility.Visible : Visibility.Collapsed;
+            optionsSection.Visibility =
+                (hostBased || puttyRouted || localShell) ? Visibility.Visible : Visibility.Collapsed;
+        }
+        UpdateProtocolDependentVisibility();
+        protocolBox.SelectionChanged += (_, _) => UpdateProtocolDependentVisibility();
 
-        contentPanel.Children.Add(BuildFormSection("Advanced",
-            BuildFormRow("PuTTY session", puttySessionBox),
-            BuildFormRow("Extra arguments", extraArgsBox),
-            BuildFormRow("Working directory", workingDirectoryBox),
-            BuildFormRow("Notes", notesBox)));
-
-        // No inner ScrollViewer here. The ContentDialog template already
-        // wraps its content in one — nesting a second ScrollViewer made the
-        // outer template-level gutter render permanently, even on dialogs
-        // that didn't need to scroll. Letting the template handle overflow
-        // gives the modern fluent overlay scrollbar that auto-hides.
+        // No inner ScrollViewer — the ContentDialog template wraps its
+        // content in a fluent-overlay scroller that auto-hides when the form
+        // fits and only appears when scrolling is actually needed.
         ContentDialog dialog = new()
         {
             Title = isNew ? "New session" : "Edit session",
@@ -721,10 +797,14 @@ public sealed partial class SessionsPanel : UserControl
 
         dialog.PrimaryButtonClick += (_, args) =>
         {
+            string folderValue = ResolveFolderValue(folderBox);
+            string leafValue = nameBox.Text.Trim();
+            string synthesizedId = string.IsNullOrEmpty(folderValue) ? leafValue : $"{folderValue}/{leafValue}";
+
             string? validationError = ValidateSessionEdit(
                 isNew ? null : originalSessionId,
-                sessionIdBox.Text,
-                nameBox.Text,
+                synthesizedId,
+                leafValue,
                 protocolBox.SelectedItem is ConnectionProtocol protocol ? protocol : ConnectionProtocol.SSH,
                 hostBox.Text,
                 portBox.Value);
@@ -742,8 +822,10 @@ public sealed partial class SessionsPanel : UserControl
             return;
         }
 
-        draft.SessionId = NormalizeSessionId(sessionIdBox.Text);
-        draft.SessionName = string.IsNullOrWhiteSpace(nameBox.Text) ? LastPathSegment(draft.SessionId) : nameBox.Text.Trim();
+        string folder = ResolveFolderValue(folderBox);
+        string leaf = nameBox.Text.Trim();
+        draft.SessionName = leaf;
+        draft.SessionId = NormalizeSessionId(string.IsNullOrEmpty(folder) ? leaf : $"{folder}/{leaf}");
         draft.Protocol = protocolBox.SelectedItem is ConnectionProtocol protocol ? protocol : ConnectionProtocol.SSH;
         draft.Host = hostBox.Text.Trim();
         draft.Port = (int)Math.Clamp(Math.Round(portBox.Value), 1, 65535);
@@ -854,93 +936,132 @@ public sealed partial class SessionsPanel : UserControl
     }
 
     /// <summary>
-    /// Single section in a settings-style form: section title, a 1px divider
-    /// underneath, and the supplied rows stacked beneath. Matches the visual
-    /// language used in the app Settings dialog so both dialogs feel like
-    /// the same product.
+    /// Builds the list of folder choices for the folder dropdown: every
+    /// folder we know about (inferred from session paths plus explicit empty
+    /// folders) preceded by a "(no folder)" sentinel that maps back to the
+    /// session living at the tree root.
     /// </summary>
-    private static StackPanel BuildFormSection(string title, params UIElement[] rows)
+    private List<string> BuildFolderOptions()
     {
-        StackPanel section = new() { Spacing = 14 };
+        HashSet<string> all = new(StringComparer.OrdinalIgnoreCase);
+        foreach (SessionData session in _allSessions)
+        {
+            string folder = session.FolderPath;
+            if (string.IsNullOrEmpty(folder)) continue;
+            string[] segments = folder.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            for (int i = 1; i <= segments.Length; i++)
+            {
+                all.Add(string.Join('/', segments.Take(i)));
+            }
+        }
+        foreach (string explicitFolder in _emptyFolders)
+        {
+            if (!string.IsNullOrWhiteSpace(explicitFolder))
+            {
+                all.Add(explicitFolder);
+            }
+        }
 
-        StackPanel header = new() { Spacing = 6 };
-        header.Children.Add(new TextBlock
+        List<string> ordered = new() { NoFolderLabel };
+        ordered.AddRange(all.OrderBy(f => f, StringComparer.OrdinalIgnoreCase));
+        return ordered;
+    }
+
+    /// <summary>
+    /// Translates the folder ComboBox selection into the actual folder path.
+    /// The "(no folder)" sentinel becomes <see cref="string.Empty"/> so the
+    /// session lives at the tree root.
+    /// </summary>
+    private static string ResolveFolderValue(ComboBox folderBox)
+    {
+        string? selected = folderBox.SelectedItem as string;
+        return string.IsNullOrEmpty(selected) || string.Equals(selected, NoFolderLabel, StringComparison.Ordinal)
+            ? string.Empty
+            : selected;
+    }
+
+    /// <summary>
+    /// Wraps a single field in a Windows-11 SettingsCard. Header is the
+    /// short label, Description is the explanatory caption (kept brief —
+    /// users read these once). Default content alignment is "Right" so
+    /// dropdowns / number boxes sit at the trailing edge; pass
+    /// <see cref="ContentAlignment.Vertical"/> for inputs that need full
+    /// row width (multi-line text, the inline Host+Port+User Grid).
+    /// </summary>
+    private static SettingsCard MakeCard(
+        string header,
+        string description,
+        string headerIconGlyph,
+        FrameworkElement content,
+        ContentAlignment contentAlignment = ContentAlignment.Right)
+    {
+        SettingsCard card = new()
+        {
+            Header = header,
+            Content = content,
+            ContentAlignment = contentAlignment,
+        };
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            card.Description = description;
+        }
+        if (!string.IsNullOrWhiteSpace(headerIconGlyph))
+        {
+            card.HeaderIcon = new FontIcon { Glyph = headerIconGlyph };
+        }
+        return card;
+    }
+
+    /// <summary>
+    /// One section block: a BodyStrong title and the cards stacked beneath
+    /// it. Mirrors Microsoft's own settings-page layout (title → cards).
+    /// </summary>
+    private static StackPanel BuildSectionStack(string title, params UIElement[] cards)
+    {
+        StackPanel section = new() { Spacing = 4 };
+        section.Children.Add(new TextBlock
         {
             Text = title,
             Style = (Style)Application.Current.Resources["BodyStrongTextBlockStyle"],
+            Margin = new Thickness(0, 0, 0, 6),
         });
-        header.Children.Add(new Microsoft.UI.Xaml.Shapes.Rectangle
+        foreach (UIElement card in cards)
         {
-            Height = 1,
-            Fill = (Brush)Application.Current.Resources["DividerStrokeColorDefaultBrush"],
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-        });
-        section.Children.Add(header);
-
-        StackPanel body = new() { Spacing = 16 };
-        foreach (UIElement row in rows)
-        {
-            body.Children.Add(row);
+            section.Children.Add(card);
         }
-        section.Children.Add(body);
-
         return section;
     }
 
     /// <summary>
-    /// Form row with the label above the editor (vertical stack). This
-    /// pattern centres reliably on the WinUI 3 ContentDialog template, never
-    /// truncates a label when the dialog is constrained, and removes the
-    /// fragile two-column "label-left / editor-right" layout that broke
-    /// horizontal alignment in earlier revisions.
+    /// Adds a small label-on-top cell to the Host / Port / User row.
+    /// Used by the Connection card to keep three semantically-paired fields
+    /// in one horizontal block while their labels stay legible above each
+    /// editor.
     /// </summary>
-    private static StackPanel BuildFormRow(string label, FrameworkElement editor, string? hint = null)
+    private static void AddLabeledCell(Grid row, int column, string label, FrameworkElement editor)
     {
-        StackPanel row = new() { Spacing = 6 };
-        row.Children.Add(new TextBlock
+        TextBlock labelBlock = new()
         {
             Text = label,
             Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
             Foreground = (Brush)Application.Current.Resources["TextFillColorSecondaryBrush"],
-        });
+            Margin = new Thickness(0, 0, 0, 4),
+        };
+        Grid.SetRow(labelBlock, 0);
+        Grid.SetColumn(labelBlock, column);
+        row.Children.Add(labelBlock);
+
         editor.HorizontalAlignment = HorizontalAlignment.Stretch;
+        Grid.SetRow(editor, 1);
+        Grid.SetColumn(editor, column);
         row.Children.Add(editor);
-        if (!string.IsNullOrWhiteSpace(hint))
-        {
-            row.Children.Add(new TextBlock
-            {
-                Text = hint,
-                Style = (Style)Application.Current.Resources["CaptionTextBlockStyle"],
-                Foreground = (Brush)Application.Current.Resources["TextFillColorTertiaryBrush"],
-                TextWrapping = TextWrapping.Wrap,
-            });
-        }
-        return row;
     }
 
-    /// <summary>
-    /// Inline pair: Host (stretches) + Port (compact, fixed-ish width).
-    /// Two semantically related fields that the user types in one motion —
-    /// keeping them side-by-side avoids unnecessary vertical sprawl while
-    /// the rest of the form stays single-column.
-    /// </summary>
-    private static Grid BuildHostAndPortRow(FrameworkElement hostEditor, FrameworkElement portEditor)
-    {
-        // Host stretches; Port is fixed-width but generous enough to hold
-        // 5 digits + the inline spin buttons without crowding the value.
-        Grid row = new() { ColumnSpacing = 12 };
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(180) });
+    private static bool IsPuttyRouted(ConnectionProtocol p)
+        => p is not (ConnectionProtocol.SSH or ConnectionProtocol.SSH2 or ConnectionProtocol.WINCMD or ConnectionProtocol.PS);
 
-        StackPanel hostCell = BuildFormRow("Host", hostEditor);
-        StackPanel portCell = BuildFormRow("Port", portEditor);
-
-        Grid.SetColumn(hostCell, 0);
-        Grid.SetColumn(portCell, 1);
-        row.Children.Add(hostCell);
-        row.Children.Add(portCell);
-        return row;
-    }
+    private static bool IsLocalShell(ConnectionProtocol p)
+        => p is ConnectionProtocol.WINCMD or ConnectionProtocol.PS;
 
     private static SessionData CloneSession(SessionData source) => new()
     {

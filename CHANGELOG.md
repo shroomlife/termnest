@@ -4,6 +4,18 @@ All notable changes to TermNest are documented in this file.
 
 The version format is `MAJOR.MINOR.BUILD.PATCH` to match the MSIX `<Identity Version>` shape. The `PATCH` field is bumped on every change that produces a new MSIX so `Add-AppxPackage` recognises an upgrade.
 
+## [1.0.0.7] - 2026-04-30
+
+### Changed
+- **Edit Session and Settings dialogs now use Microsoft's official Windows-11 settings primitives** — `SettingsCard` from `CommunityToolkit.WinUI.Controls.SettingsControls`. Each setting renders as a Card with a bold Header, a one-line Description below, and the editor on the right (or beneath the header for inputs that need full row width). Matches the Windows Settings app and the WinUI Gallery exactly.
+- **Folder is now a dropdown of existing folders**, not a free-form `Folder/Name` text field. Pick the folder; the Display name becomes the leaf segment. New folders are still created via the side-rail "New folder" button.
+- **Connection card hosts Host + Port + User in one row** (`user@host:port` shape), so SSH sessions don't leave the form looking empty.
+- **Conditional sections by protocol** — the Connection card hides for local cmd/PowerShell sessions; the "Saved PuTTY session" card appears only for PuTTY-routed protocols (Telnet, RDP, VNC, …); the "Working directory" card appears only for local-shell protocols. The dialog only shows fields that actually apply to the selected protocol.
+- Edit Session inner width 760 (was 640), Settings 640 (was 560) — comfortable now that each row carries header + description + control.
+
+### Added
+- Dependency: `CommunityToolkit.WinUI.Controls.SettingsControls 8.2.250402` — the toolkit Microsoft Learn explicitly recommends for settings UI.
+
 ## [1.0.0.6] - 2026-04-30
 
 ### Fixed
