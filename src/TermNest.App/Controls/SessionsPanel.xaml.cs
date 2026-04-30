@@ -795,6 +795,13 @@ public sealed partial class SessionsPanel : UserControl
             VerticalAlignment = VerticalAlignment.Center,
         };
 
+        // Default ContentDialogMaxWidth is 548 — too narrow for a SettingsCard
+        // form with header + description + editor in one row. Bump just the
+        // MaxWidth scoped resource. ContentDialogMinWidth stays at its default
+        // so the popup root keeps its smart-positioning (overriding both
+        // MinWidth and MaxWidth was what broke horizontal centering before).
+        dialog.Resources["ContentDialogMaxWidth"] = (double)SessionEditorDialogWidth + 48;
+
         dialog.PrimaryButtonClick += (_, args) =>
         {
             string folderValue = ResolveFolderValue(folderBox);

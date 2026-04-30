@@ -4,6 +4,11 @@ All notable changes to TermNest are documented in this file.
 
 The version format is `MAJOR.MINOR.BUILD.PATCH` to match the MSIX `<Identity Version>` shape. The `PATCH` field is bumped on every change that produces a new MSIX so `Add-AppxPackage` recognises an upgrade.
 
+## [1.0.0.8] - 2026-04-30
+
+### Fixed
+- **Edit Session and Settings dialogs no longer clip on the right.** WinUI 3's `ContentDialog` template caps its width at `ContentDialogMaxWidth = 548` by default. Our SettingsCard rows ask for ~720 px (header + description + editor), so everything past 548 was overflowing into invisible territory. Both dialogs now override only the `ContentDialogMaxWidth` scoped resource (not `MinWidth`, not the dialog's own constraints) — that's the one combination that widens the dialog AND keeps horizontal centering working.
+
 ## [1.0.0.7] - 2026-04-30
 
 ### Changed

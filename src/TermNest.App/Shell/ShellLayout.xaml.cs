@@ -410,6 +410,12 @@ public sealed partial class ShellLayout : UserControl
             VerticalAlignment = VerticalAlignment.Center,
         };
 
+        // Bump the dialog template's MaxWidth past its 548-px default so the
+        // SettingsCards have room for header + description + editor without
+        // clipping. Only MaxWidth — leaving MinWidth at the default keeps the
+        // popup root's centering logic happy.
+        dialog.Resources["ContentDialogMaxWidth"] = (double)SettingsDialogWidth + 48;
+
         ContentDialogResult result = await dialog.ShowAsync();
         if (result != ContentDialogResult.Primary) return;
 
